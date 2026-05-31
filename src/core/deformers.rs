@@ -1,5 +1,22 @@
 use super::math::{Vector2, degrees_to_radian};
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum DeformerTransform<'a> {
+    Rotation {
+        angle_degrees: f32,
+        scale: f32,
+        translation: Vector2,
+        flip_x: bool,
+        flip_y: bool,
+    },
+    Warp {
+        grid: &'a [Vector2],
+        cols: usize,
+        rows: usize,
+        interpolation: WarpInterpolation,
+    },
+}
+
 pub fn rotation_deformer_transform_point(
     point: Vector2,
     angle_degrees: f32,
@@ -23,6 +40,42 @@ pub fn rotation_deformer_transform_point(
         m00 * point.x() + m01 * point.y() + translation.x(),
         m10 * point.x() + m11 * point.y() + translation.y(),
     )
+}
+
+pub fn transform_art_mesh_vertices_by_deformers(
+    vertices: &[Vector2],
+    transforms: &[DeformerTransform<'_>],
+) -> Option<Vec<Vector2>> {
+    let mut out = vertices.to_vec();
+
+    for transform in transforms {
+        for vertex in &mut out {
+            *vertex = match *transform {
+                DeformerTransform::Rotation {
+                    angle_degrees,
+                    scale,
+                    translation,
+                    flip_x,
+                    flip_y,
+                } => rotation_deformer_transform_point(
+                    *vertex,
+                    angle_degrees,
+                    scale,
+                    translation,
+                    flip_x,
+                    flip_y,
+                ),
+                DeformerTransform::Warp {
+                    grid,
+                    cols,
+                    rows,
+                    interpolation,
+                } => warp_deformer_transform_inside(*vertex, grid, cols, rows, interpolation)?,
+            };
+        }
+    }
+
+    Some(out)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

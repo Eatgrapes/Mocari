@@ -1,5 +1,6 @@
 use rusty_live2d::core::{
-    Vector2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_inside,
+    DeformerTransform, Vector2, WarpInterpolation, rotation_deformer_transform_point,
+    transform_art_mesh_vertices_by_deformers, warp_deformer_transform_inside,
 };
 
 fn assert_vec_close(actual: Vector2, expected: Vector2) {
@@ -117,4 +118,35 @@ fn warp_deformer_inside_rejects_outside_or_incomplete_grid() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn applies_deformer_path_to_art_mesh_vertices() {
+    let grid = [
+        Vector2::new(10.0, 20.0),
+        Vector2::new(12.0, 20.0),
+        Vector2::new(10.0, 22.0),
+        Vector2::new(12.0, 22.0),
+    ];
+    let vertices = [Vector2::new(0.25, 0.0), Vector2::new(0.0, -0.25)];
+    let transforms = [
+        DeformerTransform::Rotation {
+            angle_degrees: 90.0,
+            scale: 1.0,
+            translation: Vector2::new(0.25, 0.25),
+            flip_x: false,
+            flip_y: false,
+        },
+        DeformerTransform::Warp {
+            grid: &grid,
+            cols: 1,
+            rows: 1,
+            interpolation: WarpInterpolation::Quad,
+        },
+    ];
+
+    let out = transform_art_mesh_vertices_by_deformers(&vertices, &transforms).unwrap();
+
+    assert_vec_close(out[0], Vector2::new(10.5, 21.0));
+    assert_vec_close(out[1], Vector2::new(11.0, 20.5));
 }
