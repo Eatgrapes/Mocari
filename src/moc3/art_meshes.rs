@@ -466,6 +466,26 @@ pub struct Moc3DrawableMesh {
 }
 
 impl Moc3DrawableMesh {
+    pub fn from_parts(
+        texture_index: i32,
+        drawable_flags: u8,
+        opacity: f32,
+        draw_order: f32,
+        vertices: Vec<Moc3DrawableVertex>,
+        indices: Vec<u16>,
+        masks: Vec<i32>,
+    ) -> Self {
+        Self {
+            texture_index,
+            drawable_flags,
+            opacity,
+            draw_order,
+            vertices,
+            indices,
+            masks,
+        }
+    }
+
     pub fn texture_index(&self) -> i32 {
         self.texture_index
     }
@@ -526,15 +546,15 @@ pub fn build_moc3_drawable_mesh(
         indices.push(position_index);
     }
 
-    Some(Moc3DrawableMesh {
-        texture_index: mesh.texture_index,
-        drawable_flags: mesh.drawable_flags,
-        opacity: keyform.opacity,
-        draw_order: keyform.draw_order,
+    Some(Moc3DrawableMesh::from_parts(
+        mesh.texture_index,
+        mesh.drawable_flags,
+        keyform.opacity,
+        keyform.draw_order,
         vertices,
         indices,
-        masks: art_meshes.art_mesh_masks(art_mesh_index)?.to_vec(),
-    })
+        art_meshes.art_mesh_masks(art_mesh_index)?.to_vec(),
+    ))
 }
 
 pub fn build_moc3_drawable_meshes(
