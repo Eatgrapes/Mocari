@@ -4,7 +4,10 @@ use std::io::Read;
 
 use rusty_live2d::{
     json::{Cdi3, Model3, Motion3, Physics3},
-    moc3::{Moc3ArtMeshes, Moc3CanvasInfo, Moc3CountInfo, Moc3Header, Moc3Ids, Moc3SectionOffsets},
+    moc3::{
+        Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3CountInfo, Moc3Header, Moc3Ids,
+        Moc3SectionOffsets,
+    },
 };
 use zip::ZipArchive;
 
@@ -63,6 +66,14 @@ fn parses_runtime_assets_from_opt_in_sample_zip() {
     assert_eq!(art_meshes.meshes().len(), counts.art_meshes() as usize);
     assert!(!art_meshes.uv_xys().is_empty());
     assert!(!art_meshes.position_indices().is_empty());
+
+    let art_mesh_keyforms = Moc3ArtMeshKeyforms::parse(&moc3).unwrap();
+    assert_eq!(
+        art_mesh_keyforms.keyforms().len(),
+        counts.art_mesh_keyforms() as usize
+    );
+    assert!(!art_mesh_keyforms.position_xys().is_empty());
+    assert!(art_mesh_keyforms.art_mesh_keyform_positions(0, 0).is_some());
 
     let canvas = Moc3CanvasInfo::parse(&moc3).unwrap();
     assert!(canvas.width() > 0.0);

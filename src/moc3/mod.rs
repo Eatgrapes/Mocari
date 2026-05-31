@@ -5,7 +5,7 @@ mod header;
 mod ids;
 mod offsets;
 
-pub use art_meshes::{Moc3ArtMeshInfo, Moc3ArtMeshes};
+pub use art_meshes::{Moc3ArtMeshInfo, Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes};
 pub use canvas::Moc3CanvasInfo;
 pub use counts::Moc3CountInfo;
 pub use header::{Endianness, Moc3Header, Moc3Version};
