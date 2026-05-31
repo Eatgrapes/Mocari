@@ -8,6 +8,7 @@ pub use math::{
     radian_to_direction,
 };
 pub use physics::{
-    PhysicsInputAccumulator, PhysicsRange, normalize_physics_parameter, physics_output_angle,
+    PhysicsInputAccumulator, PhysicsRange, normalize_physics_parameter,
+    parent_gravity_for_physics_output, physics_output_angle_with_parent_gravity,
     physics_output_translation_x, physics_output_translation_y,
 };

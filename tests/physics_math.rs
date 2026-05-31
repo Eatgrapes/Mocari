@@ -1,6 +1,7 @@
 use rusty_live2d::core::{
     PhysicsInputAccumulator, PhysicsRange, Vector2, direction_to_radian,
-    normalize_physics_parameter, physics_output_angle, physics_output_translation_x,
+    normalize_physics_parameter, parent_gravity_for_physics_output,
+    physics_output_angle_with_parent_gravity, physics_output_translation_x,
     physics_output_translation_y, radian_to_direction,
 };
 
@@ -63,11 +64,42 @@ fn physics_output_angle_uses_direction_delta() {
     );
     assert_eq!(radian_to_direction(0.0), parent_gravity);
     assert_close(
-        physics_output_angle(translation, parent_gravity, false),
+        physics_output_angle_with_parent_gravity(translation, parent_gravity, false),
         -std::f32::consts::FRAC_PI_2,
     );
     assert_close(
-        physics_output_angle(translation, parent_gravity, true),
+        physics_output_angle_with_parent_gravity(translation, parent_gravity, true),
         std::f32::consts::FRAC_PI_2,
+    );
+}
+
+#[test]
+fn physics_output_parent_gravity_matches_particle_index_branch() {
+    let particles = [
+        Vector2::new(1.0, 2.0),
+        Vector2::new(4.0, 6.0),
+        Vector2::new(10.0, 6.0),
+    ];
+    let parent_gravity = Vector2::new(0.0, -1.0);
+
+    assert_eq!(
+        parent_gravity_for_physics_output(&particles, 0, parent_gravity),
+        Some(Vector2::new(0.0, 1.0))
+    );
+    assert_eq!(
+        parent_gravity_for_physics_output(&particles, 1, parent_gravity),
+        Some(Vector2::new(0.0, 1.0))
+    );
+    assert_eq!(
+        parent_gravity_for_physics_output(&particles, 2, parent_gravity),
+        Some(Vector2::new(3.0, 4.0))
+    );
+    assert_eq!(
+        parent_gravity_for_physics_output(&particles, 3, parent_gravity),
+        Some(Vector2::new(6.0, 0.0))
+    );
+    assert_eq!(
+        parent_gravity_for_physics_output(&particles, 4, parent_gravity),
+        None
     );
 }

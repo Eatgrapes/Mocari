@@ -149,7 +149,31 @@ pub fn physics_output_translation_y(translation: Vector2, reflect: bool) -> f32 
     if reflect { value * -1.0 } else { value }
 }
 
-pub fn physics_output_angle(translation: Vector2, parent_gravity: Vector2, reflect: bool) -> f32 {
+pub fn parent_gravity_for_physics_output(
+    particles: &[Vector2],
+    particle_index: usize,
+    parent_gravity: Vector2,
+) -> Option<Vector2> {
+    if particle_index >= 2 {
+        let current = particles.get(particle_index - 1)?;
+        let previous = particles.get(particle_index - 2)?;
+        return Some(Vector2::new(
+            current.x() - previous.x(),
+            current.y() - previous.y(),
+        ));
+    }
+
+    Some(Vector2::new(
+        parent_gravity.x() * -1.0,
+        parent_gravity.y() * -1.0,
+    ))
+}
+
+pub fn physics_output_angle_with_parent_gravity(
+    translation: Vector2,
+    parent_gravity: Vector2,
+    reflect: bool,
+) -> f32 {
     let value = direction_to_radian(parent_gravity, translation);
     if reflect { value * -1.0 } else { value }
 }
