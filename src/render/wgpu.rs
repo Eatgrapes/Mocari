@@ -9,6 +9,10 @@ pub fn live2d_wgsl_source() -> &'static str {
     include_str!("shaders/live2d.wgsl")
 }
 
+pub fn live2d_masked_wgsl_source() -> &'static str {
+    include_str!("shaders/live2d_masked.wgsl")
+}
+
 pub fn mask_wgsl_source() -> &'static str {
     include_str!("shaders/mask.wgsl")
 }

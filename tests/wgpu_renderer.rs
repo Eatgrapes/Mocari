@@ -5,8 +5,8 @@ use rusty_live2d::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix, encode_wgpu_vertices,
-        live2d_blend_state, live2d_wgsl_source, mask_wgsl_source, wgpu_mask_blend_state,
-        wgpu_vertices_from_drawable,
+        live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source, mask_wgsl_source,
+        wgpu_mask_blend_state, wgpu_vertices_from_drawable,
     },
 };
 
@@ -71,6 +71,21 @@ fn mask_wgsl_uses_external_file_and_channel_params() {
     assert!(source.contains("step(mask_params.base_rect.x, pos.x)"));
     assert!(source.contains("textureSample(live2d_texture, live2d_sampler, input.uv).a"));
     assert!(source.contains("return mask_params.channel_flag * source_alpha"));
+}
+
+#[test]
+fn live2d_masked_wgsl_samples_inverse_mask_channel() {
+    let source = live2d_masked_wgsl_source();
+    let shader_file = std::fs::read_to_string("src/render/shaders/live2d_masked.wgsl").unwrap();
+
+    assert_eq!(source, shader_file);
+    assert!(source.contains("@group(2) @binding(0)"));
+    assert!(source.contains("@group(3) @binding(0)"));
+    assert!(source.contains("clip_matrix: mat4x4<f32>"));
+    assert!(source.contains("channel_flag: vec4<f32>"));
+    assert!(source.contains("clip_params.clip_matrix * position"));
+    assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
+    assert!(source.contains("dot(vec4<f32>(1.0) - mask_sample, clip_params.channel_flag)"));
 }
 
 #[test]
