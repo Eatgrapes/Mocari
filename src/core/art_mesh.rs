@@ -1,0 +1,30 @@
+use super::math::Vector2;
+
+pub fn affect_art_mesh_pair(
+    a: Vector2,
+    b: Vector2,
+    weight_a: f32,
+    weight_b: f32,
+    glue_opacity: f32,
+) -> (Vector2, Vector2) {
+    (
+        Vector2::new(
+            a.x() + (b.x() - a.x()) * weight_a * glue_opacity,
+            a.y() + (b.y() - a.y()) * weight_a * glue_opacity,
+        ),
+        Vector2::new(
+            b.x() + (a.x() - b.x()) * weight_b * glue_opacity,
+            b.y() + (a.y() - b.y()) * weight_b * glue_opacity,
+        ),
+    )
+}
+
+pub fn reverse_coordinate_y(vertices: &mut [Vector2]) {
+    for vertex in vertices {
+        *vertex = Vector2::new(vertex.x(), -vertex.y());
+    }
+}
+
+pub fn draw_order_from_raw(raw: f32) -> i32 {
+    ((raw + 0.001).trunc() as i32).clamp(0, 1000)
+}

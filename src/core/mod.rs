@@ -1,3 +1,4 @@
+mod art_mesh;
 mod blend;
 mod deformers;
 mod ids;
@@ -7,6 +8,7 @@ mod math;
 mod parameters;
 mod physics;
 
+pub use art_mesh::{affect_art_mesh_pair, draw_order_from_raw, reverse_coordinate_y};
 pub use blend::{
     BlendSlot, Rgb, blend_scalar_slots, blend_scalar_slots_clamped, multiply_rgb, screen_rgb,
 };
