@@ -293,6 +293,53 @@ fn creates_mask_pipeline_and_encodes_mask_draw_call() {
 }
 
 #[test]
+fn draws_prepared_mask_contexts_into_mask_target() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let clipped = test_mesh_with_masks(0, 0.0, vec![1]);
+    let mask = test_mesh_with_draw_order(0, 1.0);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[clipped, mask]).unwrap();
+    let mut plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+    plan.prepare_single_texture_masks(&buffers).unwrap();
+    let clipping_resources = renderer.create_clipping_resources(&device, &plan).unwrap();
+    assert_eq!(clipping_resources.contexts().len(), 1);
+
+    let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.draw_masks_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.draw_masks_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: mask_target.view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_masks_with_textures(&mut pass, &buffers, &clipping_resources, &[texture])
+            .unwrap();
+        assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
 fn mesh_buffers_expose_stable_draw_order_indices() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let meshes = [
