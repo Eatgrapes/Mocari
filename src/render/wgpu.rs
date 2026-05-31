@@ -436,22 +436,34 @@ impl WgpuLive2dRenderer {
         mesh_buffers: &WgpuMeshBuffers,
         texture_bind_groups: &[wgpu::BindGroup],
     ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_bind_group_provider(render_pass, mesh_buffers, |texture_index| {
+            texture_bind_group_at(texture_bind_groups, texture_index)
+        })
+    }
+
+    pub fn draw_with_textures(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        textures: &[WgpuTexture],
+    ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_bind_group_provider(render_pass, mesh_buffers, |texture_index| {
+            texture_bind_group_from_textures(textures, texture_index)
+        })
+    }
+
+    fn draw_with_bind_group_provider<'a>(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
+    ) -> Result<u32, WgpuRenderError> {
         render_pass.set_pipeline(&self.pipeline);
 
         let mut drawn = 0;
         for drawable_index in mesh_buffers.draw_order_indices() {
             let drawable = &mesh_buffers.drawables[drawable_index];
-            let texture_index = usize::try_from(drawable.texture_index).map_err(|_| {
-                WgpuRenderError::InvalidTextureIndex {
-                    texture_index: drawable.texture_index,
-                }
-            })?;
-            let texture_bind_group =
-                texture_bind_groups
-                    .get(texture_index)
-                    .ok_or(WgpuRenderError::MissingTexture {
-                        texture_index: drawable.texture_index,
-                    })?;
+            let texture_bind_group = bind_group_for_texture(drawable.texture_index)?;
 
             render_pass.set_bind_group(0, texture_bind_group, &[]);
             render_pass.set_vertex_buffer(0, drawable.vertex_buffer.slice(..));
@@ -547,4 +559,27 @@ fn rgba8_len(width: u32, height: u32) -> Result<usize, WgpuTextureError> {
         .ok_or(WgpuTextureError::InvalidTextureSize { width, height })?;
 
     Ok(len)
+}
+
+fn texture_bind_group_at(
+    texture_bind_groups: &[wgpu::BindGroup],
+    texture_index: i32,
+) -> Result<&wgpu::BindGroup, WgpuRenderError> {
+    let texture_index_usize = usize::try_from(texture_index)
+        .map_err(|_| WgpuRenderError::InvalidTextureIndex { texture_index })?;
+    texture_bind_groups
+        .get(texture_index_usize)
+        .ok_or(WgpuRenderError::MissingTexture { texture_index })
+}
+
+fn texture_bind_group_from_textures(
+    textures: &[WgpuTexture],
+    texture_index: i32,
+) -> Result<&wgpu::BindGroup, WgpuRenderError> {
+    let texture_index_usize = usize::try_from(texture_index)
+        .map_err(|_| WgpuRenderError::InvalidTextureIndex { texture_index })?;
+    textures
+        .get(texture_index_usize)
+        .map(WgpuTexture::bind_group)
+        .ok_or(WgpuRenderError::MissingTexture { texture_index })
 }

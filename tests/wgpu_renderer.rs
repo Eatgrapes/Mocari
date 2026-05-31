@@ -218,6 +218,62 @@ fn creates_rgba8_texture_with_bind_group() {
 }
 
 #[test]
+fn draws_with_uploaded_textures() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let mesh = test_mesh_with_draw_order(0, 0.0);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.uploaded_texture_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.uploaded_texture_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.uploaded_texture_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_with_textures(&mut pass, &buffers, &[texture])
+            .unwrap();
+        assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
 fn rejects_rgba8_texture_with_wrong_byte_len() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
