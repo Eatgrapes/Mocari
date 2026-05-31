@@ -4,8 +4,8 @@ use rusty_live2d::{
     render::wgpu::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
-        encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices, live2d_blend_state,
-        live2d_wgsl_source, mask_wgsl_source, wgpu_vertices_from_drawable,
+        encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix, encode_wgpu_vertices,
+        live2d_blend_state, live2d_wgsl_source, mask_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
 
@@ -85,6 +85,42 @@ fn encodes_wgpu_transform_matrix() {
     assert_eq!(&bytes[20..24], &3.0f32.to_ne_bytes());
     assert_eq!(&bytes[48..52], &4.0f32.to_ne_bytes());
     assert_eq!(&bytes[52..56], &5.0f32.to_ne_bytes());
+}
+
+#[test]
+fn encodes_mask_params_from_layout_channel_and_bounds() {
+    let layout = rusty_live2d::render::wgpu::WgpuClippingLayout::new(
+        WgpuMaskChannel::Green,
+        WgpuClippingRect::new(0.5, 0.0, 0.5, 1.0),
+    );
+
+    let bytes = encode_wgpu_mask_params(layout);
+
+    assert_eq!(bytes.len(), 32);
+    assert_eq!(&bytes[0..4], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[4..8], &1.0f32.to_ne_bytes());
+    assert_eq!(&bytes[8..12], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[12..16], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[16..20], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[20..24], &(-1.0f32).to_ne_bytes());
+    assert_eq!(&bytes[24..28], &1.0f32.to_ne_bytes());
+    assert_eq!(&bytes[28..32], &1.0f32.to_ne_bytes());
+}
+
+#[test]
+fn creates_mask_params_bind_group() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let layout = rusty_live2d::render::wgpu::WgpuClippingLayout::new(
+        WgpuMaskChannel::Red,
+        WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
+    );
+
+    let params = renderer.create_mask_params(&device, layout);
+
+    let _ = params.buffer();
+    let _ = params.bind_group();
+    let _ = renderer.mask_params_bind_group_layout();
 }
 
 #[test]
