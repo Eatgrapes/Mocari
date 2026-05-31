@@ -1,8 +1,9 @@
 use rusty_live2d::core::{
-    PhysicsInputAccumulator, PhysicsRange, Vector2, direction_to_radian,
+    PhysicsInputAccumulator, PhysicsParticle, PhysicsRange, Vector2, direction_to_radian,
     normalize_physics_parameter, parent_gravity_for_physics_output,
     physics_output_angle_with_parent_gravity, physics_output_translation_x,
-    physics_output_translation_y, radian_to_direction,
+    physics_output_translation_y, radian_to_direction, stabilize_physics_particles,
+    update_physics_particles,
 };
 
 fn assert_close(actual: f32, expected: f32) {
@@ -102,4 +103,90 @@ fn physics_output_parent_gravity_matches_particle_index_branch() {
         parent_gravity_for_physics_output(&particles, 4, parent_gravity),
         None
     );
+}
+
+#[test]
+fn physics_particles_update_positions_and_velocity() {
+    let mut particles = [
+        PhysicsParticle::new(
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+        ),
+        PhysicsParticle::new(
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            1.0,
+            1.0,
+            0.0,
+            1.0,
+        ),
+    ];
+
+    update_physics_particles(
+        &mut particles,
+        Vector2::new(0.0, 0.0),
+        0.0,
+        Vector2::new(0.0, 0.0),
+        0.001,
+        1.0 / 30.0,
+        5.0,
+    );
+
+    assert_close(particles[1].position().x(), std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(particles[1].position().y(), std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(particles[1].velocity().x(), std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(
+        particles[1].velocity().y(),
+        std::f32::consts::FRAC_1_SQRT_2 - 1.0,
+    );
+}
+
+#[test]
+fn physics_particles_stabilize_along_force_direction() {
+    let mut particles = [
+        PhysicsParticle::new(
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(3.0, 4.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+        ),
+        PhysicsParticle::new(
+            Vector2::new(10.0, 10.0),
+            Vector2::new(10.0, 10.0),
+            Vector2::new(3.0, 4.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            1.0,
+            1.0,
+            2.0,
+            5.0,
+        ),
+    ];
+
+    stabilize_physics_particles(
+        &mut particles,
+        Vector2::new(2.0, 3.0),
+        0.0,
+        Vector2::new(0.0, 0.0),
+        0.001,
+    );
+
+    assert_eq!(particles[0].position(), Vector2::new(2.0, 3.0));
+    assert_eq!(particles[1].position(), Vector2::new(2.0, 8.0));
+    assert_eq!(particles[1].velocity(), Vector2::new(0.0, 0.0));
 }

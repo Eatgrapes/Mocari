@@ -30,7 +30,8 @@ pub use math::{
 };
 pub use parameters::{clamp_parameter_value, core_repeat_fold, parameter_dirty};
 pub use physics::{
-    PhysicsInputAccumulator, PhysicsRange, normalize_physics_parameter,
+    PhysicsInputAccumulator, PhysicsParticle, PhysicsRange, normalize_physics_parameter,
     parent_gravity_for_physics_output, physics_output_angle_with_parent_gravity,
-    physics_output_translation_x, physics_output_translation_y,
+    physics_output_translation_x, physics_output_translation_y, stabilize_physics_particles,
+    update_physics_particles,
 };

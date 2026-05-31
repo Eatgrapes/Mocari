@@ -1,4 +1,4 @@
-use super::math::{Vector2, direction_to_radian};
+use super::math::{Vector2, degrees_to_radian, direction_to_radian, radian_to_direction};
 
 const MAXIMUM_WEIGHT: f32 = 100.0;
 
@@ -36,6 +36,65 @@ pub struct PhysicsInputAccumulator {
     translation_x: f32,
     translation_y: f32,
     angle: f32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PhysicsParticle {
+    position: Vector2,
+    last_position: Vector2,
+    velocity: Vector2,
+    force: Vector2,
+    last_gravity: Vector2,
+    mobility: f32,
+    delay: f32,
+    acceleration: f32,
+    radius: f32,
+}
+
+impl PhysicsParticle {
+    pub fn new(
+        position: Vector2,
+        last_position: Vector2,
+        velocity: Vector2,
+        force: Vector2,
+        last_gravity: Vector2,
+        mobility: f32,
+        delay: f32,
+        acceleration: f32,
+        radius: f32,
+    ) -> Self {
+        Self {
+            position,
+            last_position,
+            velocity,
+            force,
+            last_gravity,
+            mobility,
+            delay,
+            acceleration,
+            radius,
+        }
+    }
+
+    pub fn position(&self) -> Vector2 {
+        self.position
+    }
+
+    pub fn last_position(&self) -> Vector2 {
+        self.last_position
+    }
+
+    pub fn velocity(&self) -> Vector2 {
+        self.velocity
+    }
+
+    pub fn force(&self) -> Vector2 {
+        self.force
+    }
+
+    pub fn last_gravity(&self) -> Vector2 {
+        self.last_gravity
+    }
 }
 
 impl PhysicsInputAccumulator {
@@ -176,4 +235,116 @@ pub fn physics_output_angle_with_parent_gravity(
 ) -> f32 {
     let value = direction_to_radian(parent_gravity, translation);
     if reflect { value * -1.0 } else { value }
+}
+
+pub fn update_physics_particles(
+    strand: &mut [PhysicsParticle],
+    total_translation: Vector2,
+    total_angle: f32,
+    wind_direction: Vector2,
+    threshold_value: f32,
+    delta_time_seconds: f32,
+    air_resistance: f32,
+) {
+    let Some((first, rest)) = strand.split_first_mut() else {
+        return;
+    };
+
+    first.position = total_translation;
+    let current_gravity = normalize(radian_to_direction(degrees_to_radian(total_angle)));
+    let mut previous_position = first.position;
+
+    for particle in rest {
+        particle.force = add(mul(current_gravity, particle.acceleration), wind_direction);
+        particle.last_position = particle.position;
+
+        let delay = particle.delay * delta_time_seconds * 30.0;
+        let mut direction = sub(particle.position, previous_position);
+        let radian = direction_to_radian(particle.last_gravity, current_gravity) / air_resistance;
+
+        let direction_x = radian.cos() * direction.x() - direction.y() * radian.sin();
+        let direction_y = radian.sin() * direction_x + direction.y() * radian.cos();
+        direction = Vector2::new(direction_x, direction_y);
+
+        particle.position = add(previous_position, direction);
+        let velocity = mul(particle.velocity, delay);
+        let force = mul(particle.force, delay * delay);
+        particle.position = add(add(particle.position, velocity), force);
+
+        let new_direction = normalize(sub(particle.position, previous_position));
+        particle.position = add(previous_position, mul(new_direction, particle.radius));
+
+        if particle.position.x().abs() < threshold_value {
+            particle.position = Vector2::new(0.0, particle.position.y());
+        }
+
+        if delay != 0.0 {
+            particle.velocity = mul(
+                div(sub(particle.position, particle.last_position), delay),
+                particle.mobility,
+            );
+        }
+
+        particle.force = Vector2::new(0.0, 0.0);
+        particle.last_gravity = current_gravity;
+        previous_position = particle.position;
+    }
+}
+
+pub fn stabilize_physics_particles(
+    strand: &mut [PhysicsParticle],
+    total_translation: Vector2,
+    total_angle: f32,
+    wind_direction: Vector2,
+    threshold_value: f32,
+) {
+    let Some((first, rest)) = strand.split_first_mut() else {
+        return;
+    };
+
+    first.position = total_translation;
+    let current_gravity = normalize(radian_to_direction(degrees_to_radian(total_angle)));
+    let mut previous_position = first.position;
+
+    for particle in rest {
+        particle.force = add(mul(current_gravity, particle.acceleration), wind_direction);
+        particle.last_position = particle.position;
+        particle.velocity = Vector2::new(0.0, 0.0);
+
+        let force = mul(normalize(particle.force), particle.radius);
+        particle.position = add(previous_position, force);
+
+        if particle.position.x().abs() < threshold_value {
+            particle.position = Vector2::new(0.0, particle.position.y());
+        }
+
+        particle.force = Vector2::new(0.0, 0.0);
+        particle.last_gravity = current_gravity;
+        previous_position = particle.position;
+    }
+}
+
+fn add(a: Vector2, b: Vector2) -> Vector2 {
+    Vector2::new(a.x() + b.x(), a.y() + b.y())
+}
+
+fn sub(a: Vector2, b: Vector2) -> Vector2 {
+    Vector2::new(a.x() - b.x(), a.y() - b.y())
+}
+
+fn mul(value: Vector2, factor: f32) -> Vector2 {
+    Vector2::new(value.x() * factor, value.y() * factor)
+}
+
+fn div(value: Vector2, factor: f32) -> Vector2 {
+    Vector2::new(value.x() / factor, value.y() / factor)
+}
+
+fn normalize(value: Vector2) -> Vector2 {
+    let length = (value.x() * value.x() + value.y() * value.y()).sqrt();
+    if length == 0.0 {
+        value
+    } else {
+        div(value, length)
+    }
 }
