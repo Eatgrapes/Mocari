@@ -5,7 +5,8 @@ use rusty_live2d::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix, encode_wgpu_vertices,
-        live2d_blend_state, live2d_wgsl_source, mask_wgsl_source, wgpu_vertices_from_drawable,
+        live2d_blend_state, live2d_wgsl_source, mask_wgsl_source, wgpu_mask_blend_state,
+        wgpu_vertices_from_drawable,
     },
 };
 
@@ -148,6 +149,16 @@ fn exposes_live2d_premultiplied_blend_states() {
 }
 
 #[test]
+fn exposes_inverse_mask_blend_state() {
+    let blend = wgpu_mask_blend_state();
+
+    assert_eq!(blend.color.src_factor, wgpu::BlendFactor::Zero);
+    assert_eq!(blend.color.dst_factor, wgpu::BlendFactor::OneMinusSrc);
+    assert_eq!(blend.alpha.src_factor, wgpu::BlendFactor::Zero);
+    assert_eq!(blend.alpha.dst_factor, wgpu::BlendFactor::OneMinusSrcAlpha);
+}
+
+#[test]
 fn creates_pipeline_and_encodes_draw_calls() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -223,6 +234,59 @@ fn creates_pipeline_and_encodes_draw_calls() {
 
         let drawn = renderer.draw(&mut pass, &buffers, &[bind_group]).unwrap();
         assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
+fn creates_mask_pipeline_and_encodes_mask_draw_call() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let params = renderer.create_mask_params(
+        &device,
+        rusty_live2d::render::wgpu::WgpuClippingLayout::new(
+            WgpuMaskChannel::Red,
+            WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
+        ),
+    );
+    let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
+    let mesh = test_mesh_with_draw_order(0, 0.0);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
+    let drawable = &buffers.drawables()[0];
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.mask_pipeline_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.mask_pipeline_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: mask_target.view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        pass.set_pipeline(renderer.mask_pipeline());
+        pass.set_bind_group(0, texture.bind_group(), &[]);
+        pass.set_bind_group(1, transform.bind_group(), &[]);
+        pass.set_bind_group(2, params.bind_group(), &[]);
+        pass.set_vertex_buffer(0, drawable.vertex_buffer().slice(..));
+        pass.set_index_buffer(drawable.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+        pass.draw_indexed(0..drawable.index_count(), 0, 0..1);
     }
 
     let _ = encoder.finish();

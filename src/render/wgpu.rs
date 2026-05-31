@@ -54,6 +54,21 @@ pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState
     }
 }
 
+pub fn wgpu_mask_blend_state() -> wgpu::BlendState {
+    wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Zero,
+            dst_factor: wgpu::BlendFactor::OneMinusSrc,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Zero,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WgpuDrawableVertex {
     position: [f32; 2],
@@ -732,6 +747,7 @@ pub struct WgpuLive2dRenderer {
     normal_pipeline: wgpu::RenderPipeline,
     additive_pipeline: wgpu::RenderPipeline,
     multiplicative_pipeline: wgpu::RenderPipeline,
+    mask_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     transform_bind_group_layout: wgpu::BindGroupLayout,
     mask_params_bind_group_layout: wgpu::BindGroupLayout,
@@ -805,6 +821,10 @@ impl WgpuLive2dRenderer {
             label: Some("live2d.shader"),
             source: wgpu::ShaderSource::Wgsl(live2d_wgsl_source().into()),
         });
+        let mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("live2d.mask.shader"),
+            source: wgpu::ShaderSource::Wgsl(mask_wgsl_source().into()),
+        });
         let bind_group_layouts = [
             Some(&texture_bind_group_layout),
             Some(&transform_bind_group_layout),
@@ -838,6 +858,22 @@ impl WgpuLive2dRenderer {
             Moc3DrawableBlendMode::Multiplicative,
             "live2d.pipeline.multiplicative",
         );
+        let mask_bind_group_layouts = [
+            Some(&texture_bind_group_layout),
+            Some(&transform_bind_group_layout),
+            Some(&mask_params_bind_group_layout),
+        ];
+        let mask_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("live2d.mask.pipeline.layout"),
+            bind_group_layouts: &mask_bind_group_layouts,
+            immediate_size: 0,
+        });
+        let mask_pipeline = create_live2d_mask_pipeline(
+            device,
+            &mask_pipeline_layout,
+            &mask_shader,
+            "live2d.mask.pipeline",
+        );
         let identity_transform =
             create_wgpu_transform(device, &transform_bind_group_layout, &Matrix44::identity());
 
@@ -845,6 +881,7 @@ impl WgpuLive2dRenderer {
             normal_pipeline,
             additive_pipeline,
             multiplicative_pipeline,
+            mask_pipeline,
             texture_bind_group_layout,
             transform_bind_group_layout,
             mask_params_bind_group_layout,
@@ -866,6 +903,10 @@ impl WgpuLive2dRenderer {
             Moc3DrawableBlendMode::Additive => &self.additive_pipeline,
             Moc3DrawableBlendMode::Multiplicative => &self.multiplicative_pipeline,
         }
+    }
+
+    pub fn mask_pipeline(&self) -> &wgpu::RenderPipeline {
+        &self.mask_pipeline
     }
 
     pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
@@ -1294,6 +1335,45 @@ fn create_live2d_pipeline(
     let color_targets = [Some(wgpu::ColorTargetState {
         format: color_format,
         blend: Some(live2d_blend_state(blend_mode)),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &color_targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_live2d_mask_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    let vertex_buffers = [WgpuDrawableVertex::buffer_layout()];
+    let color_targets = [Some(wgpu::ColorTargetState {
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        blend: Some(wgpu_mask_blend_state()),
         write_mask: wgpu::ColorWrites::ALL,
     })];
 
