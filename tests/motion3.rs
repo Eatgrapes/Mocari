@@ -1,4 +1,7 @@
-use rusty_live2d::{Error, json::Motion3};
+use rusty_live2d::{
+    Error,
+    json::{Motion3, MotionPoint, MotionSegment},
+};
 
 #[test]
 fn parses_motion3_meta_and_curve_identity() {
@@ -60,6 +63,22 @@ fn samples_linear_motion_segment() {
 }
 
 #[test]
+fn motion_segment_linear_matches_framework_extrapolation() {
+    let segment = MotionSegment::Linear {
+        start: MotionPoint {
+            time: 0.0,
+            value: 0.0,
+        },
+        end: MotionPoint {
+            time: 1.0,
+            value: 10.0,
+        },
+    };
+
+    assert_eq!(segment.sample(2.0, false).unwrap(), 20.0);
+}
+
+#[test]
 fn samples_stepped_motion_segment() {
     let curve = Motion3::from_json_str(
         r#"{
@@ -81,6 +100,26 @@ fn samples_stepped_motion_segment() {
     assert_eq!(curve.sample(0.0).unwrap(), 0.0);
     assert_eq!(curve.sample(0.5).unwrap(), 0.0);
     assert_eq!(curve.sample(1.0).unwrap(), 1.0);
+}
+
+#[test]
+fn motion_segment_steps_match_framework_evaluators() {
+    let start = MotionPoint {
+        time: 0.0,
+        value: 2.0,
+    };
+    let end = MotionPoint {
+        time: 1.0,
+        value: 7.0,
+    };
+
+    let stepped = MotionSegment::Stepped { start, end };
+    let inverse_stepped = MotionSegment::InverseStepped { start, end };
+
+    assert_eq!(stepped.sample(1.0, false).unwrap(), 2.0);
+    assert_eq!(stepped.sample(2.0, false).unwrap(), 2.0);
+    assert_eq!(inverse_stepped.sample(0.0, false).unwrap(), 7.0);
+    assert_eq!(inverse_stepped.sample(0.5, false).unwrap(), 7.0);
 }
 
 #[test]

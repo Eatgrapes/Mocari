@@ -155,7 +155,7 @@ impl MotionCurve {
         }
 
         for segment in &self.segments {
-            if time <= segment.end().time {
+            if time < segment.end().time {
                 return segment.sample(time, self.are_beziers_restricted);
             }
         }
@@ -224,20 +224,8 @@ impl MotionSegment {
     pub fn sample(&self, time: f32, are_beziers_restricted: bool) -> Option<f32> {
         match *self {
             Self::Linear { start, end } => Some(sample_linear(start, end, time)),
-            Self::Stepped { start, end } => {
-                if time >= end.time {
-                    Some(end.value)
-                } else {
-                    Some(start.value)
-                }
-            }
-            Self::InverseStepped { start, end } => {
-                if time <= start.time {
-                    Some(start.value)
-                } else {
-                    Some(end.value)
-                }
-            }
+            Self::Stepped { start, .. } => Some(start.value),
+            Self::InverseStepped { end, .. } => Some(end.value),
             Self::Bezier {
                 start,
                 control1,
@@ -358,7 +346,7 @@ fn sample_linear(start: MotionPoint, end: MotionPoint, time: f32) -> f32 {
         return end.value;
     }
 
-    let amount = ((time - start.time) / (end.time - start.time)).clamp(0.0, 1.0);
+    let amount = ((time - start.time) / (end.time - start.time)).max(0.0);
     start.value + (end.value - start.value) * amount
 }
 
