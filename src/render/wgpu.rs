@@ -1,6 +1,9 @@
 use wgpu::util::DeviceExt;
 
-use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
+use crate::{
+    core::Matrix44,
+    moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
+};
 
 pub const LIVE2D_WGSL: &str = r#"
 struct VertexInput {
@@ -21,10 +24,13 @@ var live2d_texture: texture_2d<f32>;
 @group(0) @binding(1)
 var live2d_sampler: sampler;
 
+@group(1) @binding(0)
+var<uniform> live2d_transform: mat4x4<f32>;
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    output.position = vec4<f32>(input.position, 0.0, 1.0);
+    output.position = live2d_transform * vec4<f32>(input.position, 0.0, 1.0);
     output.uv = input.uv;
     output.opacity = input.opacity;
     return output;
@@ -300,11 +306,29 @@ impl WgpuTexture {
 }
 
 #[derive(Debug)]
+pub struct WgpuTransform {
+    buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+}
+
+impl WgpuTransform {
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+}
+
+#[derive(Debug)]
 pub struct WgpuLive2dRenderer {
     normal_pipeline: wgpu::RenderPipeline,
     additive_pipeline: wgpu::RenderPipeline,
     multiplicative_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
+    transform_bind_group_layout: wgpu::BindGroupLayout,
+    identity_transform: WgpuTransform,
     sampler: wgpu::Sampler,
 }
 
@@ -332,6 +356,20 @@ impl WgpuLive2dRenderer {
                     },
                 ],
             });
+        let transform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("live2d.transform.bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
+                }],
+            });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("live2d.texture.sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -346,7 +384,10 @@ impl WgpuLive2dRenderer {
             label: Some("live2d.shader"),
             source: wgpu::ShaderSource::Wgsl(live2d_wgsl_source().into()),
         });
-        let bind_group_layouts = [Some(&texture_bind_group_layout)];
+        let bind_group_layouts = [
+            Some(&texture_bind_group_layout),
+            Some(&transform_bind_group_layout),
+        ];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("live2d.pipeline.layout"),
             bind_group_layouts: &bind_group_layouts,
@@ -376,12 +417,16 @@ impl WgpuLive2dRenderer {
             Moc3DrawableBlendMode::Multiplicative,
             "live2d.pipeline.multiplicative",
         );
+        let identity_transform =
+            create_wgpu_transform(device, &transform_bind_group_layout, &Matrix44::identity());
 
         Self {
             normal_pipeline,
             additive_pipeline,
             multiplicative_pipeline,
             texture_bind_group_layout,
+            transform_bind_group_layout,
+            identity_transform,
             sampler,
         }
     }
@@ -403,6 +448,14 @@ impl WgpuLive2dRenderer {
 
     pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.texture_bind_group_layout
+    }
+
+    pub fn transform_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.transform_bind_group_layout
+    }
+
+    pub fn identity_transform(&self) -> &WgpuTransform {
+        &self.identity_transform
     }
 
     pub fn sampler(&self) -> &wgpu::Sampler {
@@ -428,6 +481,10 @@ impl WgpuLive2dRenderer {
                 },
             ],
         })
+    }
+
+    pub fn create_transform(&self, device: &wgpu::Device, matrix: &Matrix44) -> WgpuTransform {
+        create_wgpu_transform(device, &self.transform_bind_group_layout, matrix)
     }
 
     pub fn create_rgba8_texture(
@@ -492,7 +549,22 @@ impl WgpuLive2dRenderer {
         mesh_buffers: &WgpuMeshBuffers,
         texture_bind_groups: &[wgpu::BindGroup],
     ) -> Result<u32, WgpuRenderError> {
-        self.draw_with_bind_group_provider(render_pass, mesh_buffers, |texture_index| {
+        self.draw_with_bind_groups_and_transform(
+            render_pass,
+            mesh_buffers,
+            texture_bind_groups,
+            &self.identity_transform,
+        )
+    }
+
+    pub fn draw_with_bind_groups_and_transform(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        texture_bind_groups: &[wgpu::BindGroup],
+        transform: &WgpuTransform,
+    ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_bind_group_provider(render_pass, mesh_buffers, transform, |texture_index| {
             texture_bind_group_at(texture_bind_groups, texture_index)
         })
     }
@@ -503,7 +575,22 @@ impl WgpuLive2dRenderer {
         mesh_buffers: &WgpuMeshBuffers,
         textures: &[WgpuTexture],
     ) -> Result<u32, WgpuRenderError> {
-        self.draw_with_bind_group_provider(render_pass, mesh_buffers, |texture_index| {
+        self.draw_with_textures_and_transform(
+            render_pass,
+            mesh_buffers,
+            textures,
+            &self.identity_transform,
+        )
+    }
+
+    pub fn draw_with_textures_and_transform(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        textures: &[WgpuTexture],
+        transform: &WgpuTransform,
+    ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_bind_group_provider(render_pass, mesh_buffers, transform, |texture_index| {
             texture_bind_group_from_textures(textures, texture_index)
         })
     }
@@ -512,6 +599,7 @@ impl WgpuLive2dRenderer {
         &self,
         render_pass: &mut wgpu::RenderPass<'_>,
         mesh_buffers: &WgpuMeshBuffers,
+        transform: &WgpuTransform,
         mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
     ) -> Result<u32, WgpuRenderError> {
         let mut drawn = 0;
@@ -521,6 +609,7 @@ impl WgpuLive2dRenderer {
 
             render_pass.set_pipeline(self.pipeline_for_blend_mode(drawable.blend_mode));
             render_pass.set_bind_group(0, texture_bind_group, &[]);
+            render_pass.set_bind_group(1, transform.bind_group(), &[]);
             render_pass.set_vertex_buffer(0, drawable.vertex_buffer.slice(..));
             render_pass
                 .set_index_buffer(drawable.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -568,6 +657,15 @@ pub fn encode_wgpu_indices(indices: &[u16]) -> Vec<u8> {
     bytes
 }
 
+pub fn encode_wgpu_matrix(matrix: &Matrix44) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(64);
+    for value in matrix.as_slice() {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+
+    bytes
+}
+
 pub fn create_wgpu_drawable_buffers(
     device: &wgpu::Device,
     mesh: &Moc3DrawableMesh,
@@ -597,6 +695,29 @@ pub fn create_wgpu_drawable_buffers(
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
     })
+}
+
+fn create_wgpu_transform(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    matrix: &Matrix44,
+) -> WgpuTransform {
+    let matrix_bytes = encode_wgpu_matrix(matrix);
+    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("live2d.transform.uniform"),
+        contents: &matrix_bytes,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("live2d.transform.bind_group"),
+        layout: bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    });
+
+    WgpuTransform { buffer, bind_group }
 }
 
 fn rgba8_len(width: u32, height: u32) -> Result<usize, WgpuTextureError> {

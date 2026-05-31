@@ -1,9 +1,10 @@
 use rusty_live2d::{
+    core::Matrix44,
     moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
         WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
-        encode_wgpu_indices, encode_wgpu_vertices, live2d_blend_state, live2d_wgsl_source,
-        wgpu_vertices_from_drawable,
+        encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices, live2d_blend_state,
+        live2d_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
 
@@ -47,9 +48,26 @@ fn live2d_wgsl_samples_texture_and_applies_opacity() {
     assert!(source.contains("@location(0) position: vec2<f32>"));
     assert!(source.contains("@location(1) uv: vec2<f32>"));
     assert!(source.contains("@location(2) opacity: f32"));
+    assert!(source.contains("@group(1) @binding(0)"));
+    assert!(source.contains("live2d_transform * vec4<f32>(input.position, 0.0, 1.0)"));
     assert!(source.contains("textureSample"));
     assert!(source.contains("let alpha = sample.a * input.opacity"));
     assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
+}
+
+#[test]
+fn encodes_wgpu_transform_matrix() {
+    let mut matrix = Matrix44::identity();
+    matrix.scale(2.0, 3.0);
+    matrix.translate(4.0, 5.0);
+
+    let bytes = encode_wgpu_matrix(&matrix);
+
+    assert_eq!(bytes.len(), 64);
+    assert_eq!(&bytes[0..4], &2.0f32.to_ne_bytes());
+    assert_eq!(&bytes[20..24], &3.0f32.to_ne_bytes());
+    assert_eq!(&bytes[48..52], &4.0f32.to_ne_bytes());
+    assert_eq!(&bytes[52..56], &5.0f32.to_ne_bytes());
 }
 
 #[test]
@@ -292,6 +310,65 @@ fn draws_with_uploaded_textures() {
 
         let drawn = renderer
             .draw_with_textures(&mut pass, &buffers, &[texture])
+            .unwrap();
+        assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
+fn draws_with_uploaded_textures_and_transform() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let mut matrix = Matrix44::identity();
+    matrix.scale(0.5, 0.5);
+    let transform = renderer.create_transform(&device, &matrix);
+    let mesh = test_mesh_with_draw_order(0, 0.0);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.transform_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.transform_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.transform_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_with_textures_and_transform(&mut pass, &buffers, &[texture], &transform)
             .unwrap();
         assert_eq!(drawn, 1);
     }
