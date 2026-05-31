@@ -665,6 +665,37 @@ impl WgpuTexture {
 }
 
 #[derive(Debug)]
+pub struct WgpuMaskRenderTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
+}
+
+impl WgpuMaskRenderTarget {
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.texture
+    }
+
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[derive(Debug)]
 pub struct WgpuTransform {
     buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
@@ -899,6 +930,45 @@ impl WgpuLive2dRenderer {
             bind_group,
             width,
             height,
+        })
+    }
+
+    pub fn create_mask_render_target(
+        &self,
+        device: &wgpu::Device,
+        size: u32,
+    ) -> Result<WgpuMaskRenderTarget, WgpuTextureError> {
+        if size == 0 {
+            return Err(WgpuTextureError::InvalidTextureSize {
+                width: size,
+                height: size,
+            });
+        }
+
+        let extent = wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("live2d.mask.texture"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self.create_texture_bind_group(device, &view);
+
+        Ok(WgpuMaskRenderTarget {
+            texture,
+            view,
+            bind_group,
+            width: size,
+            height: size,
         })
     }
 

@@ -480,6 +480,59 @@ fn creates_rgba8_texture_with_bind_group() {
 }
 
 #[test]
+fn creates_mask_render_target_that_can_be_cleared() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    let mask = renderer.create_mask_render_target(&device, 256).unwrap();
+
+    assert_eq!(mask.width(), 256);
+    assert_eq!(mask.height(), 256);
+    let _ = mask.texture();
+    let _ = mask.bind_group();
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.mask_target_encoder"),
+    });
+    {
+        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.mask_target_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: mask.view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
+fn rejects_zero_sized_mask_render_target() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    let error = renderer.create_mask_render_target(&device, 0).unwrap_err();
+
+    assert_eq!(
+        error,
+        WgpuTextureError::InvalidTextureSize {
+            width: 0,
+            height: 0
+        }
+    );
+}
+
+#[test]
 fn draws_with_uploaded_textures() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
