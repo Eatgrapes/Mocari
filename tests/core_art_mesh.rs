@@ -1,5 +1,6 @@
 use rusty_live2d::core::{
-    Vector2, affect_art_mesh_pair, draw_order_from_raw, reverse_coordinate_y,
+    Vector2, affect_art_mesh_pair, apply_art_mesh_blend_shape_delta, apply_parent_part_opacity,
+    draw_order_from_raw, reverse_coordinate_y,
 };
 
 fn assert_vec_close(actual: Vector2, expected: Vector2) {
@@ -45,4 +46,20 @@ fn draw_order_uses_core_int_bias_and_clamps() {
     assert_eq!(draw_order_from_raw(12.999), 13);
     assert_eq!(draw_order_from_raw(-1.0), 0);
     assert_eq!(draw_order_from_raw(1001.0), 1000);
+}
+
+#[test]
+fn applies_art_mesh_blend_shape_delta() {
+    let mut positions = [0.0, 1.0, 2.0, 3.0];
+
+    apply_art_mesh_blend_shape_delta(&mut positions, &[10.0, -10.0, 4.0, -4.0], 0.25).unwrap();
+    apply_art_mesh_blend_shape_delta(&mut positions, &[1.0, 1.0, 1.0, 1.0], 0.0).unwrap();
+
+    assert_eq!(positions, [2.5, -1.5, 3.0, 2.0]);
+    assert!(apply_art_mesh_blend_shape_delta(&mut positions, &[1.0], 1.0).is_none());
+}
+
+#[test]
+fn parent_part_opacity_multiplies_art_mesh_opacity() {
+    assert_eq!(apply_parent_part_opacity(0.75, 0.5), 0.375);
 }

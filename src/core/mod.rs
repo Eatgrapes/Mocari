@@ -8,7 +8,10 @@ mod math;
 mod parameters;
 mod physics;
 
-pub use art_mesh::{affect_art_mesh_pair, draw_order_from_raw, reverse_coordinate_y};
+pub use art_mesh::{
+    affect_art_mesh_pair, apply_art_mesh_blend_shape_delta, apply_parent_part_opacity,
+    draw_order_from_raw, reverse_coordinate_y,
+};
 pub use blend::{
     BlendSlot, Rgb, blend_scalar_slots, blend_scalar_slots_clamped, multiply_rgb, screen_rgb,
 };

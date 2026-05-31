@@ -19,6 +19,30 @@ pub fn affect_art_mesh_pair(
     )
 }
 
+pub fn apply_art_mesh_blend_shape_delta(
+    positions: &mut [f32],
+    deltas: &[f32],
+    weight: f32,
+) -> Option<()> {
+    if positions.len() != deltas.len() {
+        return None;
+    }
+
+    if weight == 0.0 {
+        return Some(());
+    }
+
+    for (position, delta) in positions.iter_mut().zip(deltas) {
+        *position += delta * weight;
+    }
+
+    Some(())
+}
+
+pub fn apply_parent_part_opacity(opacity: f32, parent_opacity: f32) -> f32 {
+    opacity * parent_opacity
+}
+
 pub fn reverse_coordinate_y(vertices: &mut [Vector2]) {
     for vertex in vertices {
         *vertex = Vector2::new(vertex.x(), -vertex.y());
