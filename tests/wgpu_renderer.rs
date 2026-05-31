@@ -238,6 +238,67 @@ fn draw_returns_error_for_missing_texture_bind_group() {
 }
 
 #[test]
+fn draw_returns_error_for_masked_drawable_until_clipping_is_available() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let mesh = test_mesh_with_masks(0, 0.0, vec![3, 4]);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.masked_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.masked_encoder"),
+    });
+
+    let error = {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.masked_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        renderer
+            .draw_with_textures(&mut pass, &buffers, &[texture])
+            .unwrap_err()
+    };
+
+    assert_eq!(
+        error,
+        WgpuRenderError::UnsupportedClippingMasks {
+            drawable_index: 0,
+            mask_count: 2
+        }
+    );
+}
+
+#[test]
 fn creates_rgba8_texture_with_bind_group() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -472,6 +533,19 @@ fn test_mesh_with_flags(
     drawable_flags: u8,
     draw_order: f32,
 ) -> Moc3DrawableMesh {
+    test_mesh(texture_index, drawable_flags, draw_order, vec![])
+}
+
+fn test_mesh_with_masks(texture_index: u8, draw_order: f32, masks: Vec<i32>) -> Moc3DrawableMesh {
+    test_mesh(texture_index, 0, draw_order, masks)
+}
+
+fn test_mesh(
+    texture_index: u8,
+    drawable_flags: u8,
+    draw_order: f32,
+    masks: Vec<i32>,
+) -> Moc3DrawableMesh {
     Moc3DrawableMesh::from_parts(
         i32::from(texture_index),
         drawable_flags,
@@ -483,6 +557,6 @@ fn test_mesh_with_flags(
             Moc3DrawableVertex::new([0.0, 0.5], [0.5, 0.0]),
         ],
         vec![0, 1, 2],
-        vec![],
+        masks,
     )
 }

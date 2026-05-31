@@ -155,6 +155,7 @@ pub struct WgpuDrawableBuffers {
     blend_mode: Moc3DrawableBlendMode,
     opacity: f32,
     draw_order: f32,
+    masks: Vec<i32>,
 }
 
 impl WgpuDrawableBuffers {
@@ -184,6 +185,10 @@ impl WgpuDrawableBuffers {
 
     pub fn draw_order(&self) -> f32 {
         self.draw_order
+    }
+
+    pub fn masks(&self) -> &[i32] {
+        &self.masks
     }
 }
 
@@ -220,8 +225,16 @@ impl WgpuMeshBuffers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WgpuRenderError {
-    InvalidTextureIndex { texture_index: i32 },
-    MissingTexture { texture_index: i32 },
+    InvalidTextureIndex {
+        texture_index: i32,
+    },
+    MissingTexture {
+        texture_index: i32,
+    },
+    UnsupportedClippingMasks {
+        drawable_index: usize,
+        mask_count: usize,
+    },
 }
 
 impl std::fmt::Display for WgpuRenderError {
@@ -233,6 +246,13 @@ impl std::fmt::Display for WgpuRenderError {
             Self::MissingTexture { texture_index } => {
                 write!(formatter, "missing texture bind group {texture_index}")
             }
+            Self::UnsupportedClippingMasks {
+                drawable_index,
+                mask_count,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} uses {mask_count} clipping masks, but clipping is not implemented"
+            ),
         }
     }
 }
@@ -605,6 +625,12 @@ impl WgpuLive2dRenderer {
         let mut drawn = 0;
         for drawable_index in mesh_buffers.draw_order_indices() {
             let drawable = &mesh_buffers.drawables[drawable_index];
+            if !drawable.masks.is_empty() {
+                return Err(WgpuRenderError::UnsupportedClippingMasks {
+                    drawable_index,
+                    mask_count: drawable.masks.len(),
+                });
+            }
             let texture_bind_group = bind_group_for_texture(drawable.texture_index)?;
 
             render_pass.set_pipeline(self.pipeline_for_blend_mode(drawable.blend_mode));
@@ -694,6 +720,7 @@ pub fn create_wgpu_drawable_buffers(
         blend_mode: mesh.blend_mode(),
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
+        masks: mesh.masks().to_vec(),
     })
 }
 
