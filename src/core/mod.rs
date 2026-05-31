@@ -1,9 +1,14 @@
 mod ids;
+mod keyforms;
 mod math;
 mod parameters;
 mod physics;
 
 pub use ids::{DrawableId, Id, ParameterId, PartId};
+pub use keyforms::{
+    KeyformAxis, KeyformAxisInterval, KeyformRuntimeSlot, compute_keyform_axis_interval,
+    expand_keyform_runtime_slots,
+};
 pub use math::{
     Matrix44, ModelMatrix, Vector2, degrees_to_radian, direction_to_radian, radian_to_degrees,
     radian_to_direction,
