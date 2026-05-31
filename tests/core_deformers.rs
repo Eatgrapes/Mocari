@@ -1,4 +1,6 @@
-use rusty_live2d::core::{Vector2, rotation_deformer_transform_point};
+use rusty_live2d::core::{
+    Vector2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_inside,
+};
 
 fn assert_vec_close(actual: Vector2, expected: Vector2) {
     assert!(
@@ -33,4 +35,86 @@ fn rotation_deformer_applies_flip_signs_to_axes() {
         rotation_deformer_transform_point(point, 90.0, 2.0, Vector2::new(10.0, 20.0), true, true);
 
     assert_vec_close(transformed, Vector2::new(14.0, 18.0));
+}
+
+#[test]
+fn warp_deformer_inside_quad_uses_bilinear_grid_interpolation() {
+    let grid = [
+        Vector2::new(0.0, 0.0),
+        Vector2::new(10.0, 0.0),
+        Vector2::new(0.0, 20.0),
+        Vector2::new(20.0, 20.0),
+    ];
+
+    let transformed = warp_deformer_transform_inside(
+        Vector2::new(0.75, 0.75),
+        &grid,
+        1,
+        1,
+        WarpInterpolation::Quad,
+    )
+    .unwrap();
+
+    assert_vec_close(transformed, Vector2::new(13.125, 15.0));
+}
+
+#[test]
+fn warp_deformer_inside_triangle_uses_cell_diagonal() {
+    let grid = [
+        Vector2::new(0.0, 0.0),
+        Vector2::new(10.0, 0.0),
+        Vector2::new(0.0, 20.0),
+        Vector2::new(20.0, 20.0),
+    ];
+
+    let lower = warp_deformer_transform_inside(
+        Vector2::new(0.25, 0.5),
+        &grid,
+        1,
+        1,
+        WarpInterpolation::Triangle,
+    )
+    .unwrap();
+    let upper = warp_deformer_transform_inside(
+        Vector2::new(0.75, 0.75),
+        &grid,
+        1,
+        1,
+        WarpInterpolation::Triangle,
+    )
+    .unwrap();
+
+    assert_vec_close(lower, Vector2::new(2.5, 10.0));
+    assert_vec_close(upper, Vector2::new(12.5, 15.0));
+}
+
+#[test]
+fn warp_deformer_inside_rejects_outside_or_incomplete_grid() {
+    let grid = [
+        Vector2::new(0.0, 0.0),
+        Vector2::new(1.0, 0.0),
+        Vector2::new(0.0, 1.0),
+        Vector2::new(1.0, 1.0),
+    ];
+
+    assert!(
+        warp_deformer_transform_inside(
+            Vector2::new(1.0, 0.5),
+            &grid,
+            1,
+            1,
+            WarpInterpolation::Quad
+        )
+        .is_none()
+    );
+    assert!(
+        warp_deformer_transform_inside(
+            Vector2::new(0.5, 0.5),
+            &grid[..3],
+            1,
+            1,
+            WarpInterpolation::Quad
+        )
+        .is_none()
+    );
 }
