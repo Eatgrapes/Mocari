@@ -4,7 +4,7 @@ use std::io::Read;
 
 use rusty_live2d::{
     json::{Cdi3, Model3, Motion3, Physics3},
-    moc3::{Moc3CountInfo, Moc3Header, Moc3SectionOffsets},
+    moc3::{Moc3CanvasInfo, Moc3CountInfo, Moc3Header, Moc3SectionOffsets},
 };
 use zip::ZipArchive;
 
@@ -54,6 +54,11 @@ fn parses_runtime_assets_from_opt_in_sample_zip() {
     let counts = Moc3CountInfo::parse(&moc3).unwrap();
     assert!(counts.parameters() > 0);
     assert!(counts.art_meshes() > 0);
+
+    let canvas = Moc3CanvasInfo::parse(&moc3).unwrap();
+    assert!(canvas.width() > 0.0);
+    assert!(canvas.height() > 0.0);
+    assert!(canvas.pixels_per_unit() > 0.0);
 }
 
 fn open_sample_archive() -> Option<ZipArchive<File>> {
