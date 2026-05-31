@@ -2,9 +2,10 @@ use rusty_live2d::{
     core::Matrix44,
     moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
-        WgpuClippingPlan, WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError,
-        WgpuTextureError, encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices,
-        live2d_blend_state, live2d_wgsl_source, wgpu_vertices_from_drawable,
+        WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
+        WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
+        encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices, live2d_blend_state,
+        live2d_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
 
@@ -335,6 +336,68 @@ fn merges_clipping_contexts_with_same_mask_set_regardless_of_order() {
     assert_eq!(plan.contexts().len(), 1);
     assert_eq!(plan.contexts()[0].masks(), &[1, 2]);
     assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 1]);
+}
+
+#[test]
+fn assigns_single_texture_clipping_layouts_by_channel_and_cell() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = [
+        test_mesh_with_masks(0, 0.0, vec![10]),
+        test_mesh_with_masks(0, 1.0, vec![11]),
+        test_mesh_with_masks(0, 2.0, vec![12]),
+        test_mesh_with_masks(0, 3.0, vec![13]),
+        test_mesh_with_masks(0, 4.0, vec![14]),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+    let mut plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+
+    plan.assign_single_texture_layouts().unwrap();
+
+    assert_eq!(
+        plan.contexts()[0].layout().unwrap().channel(),
+        WgpuMaskChannel::Red
+    );
+    assert_eq!(
+        plan.contexts()[0].layout().unwrap().bounds(),
+        WgpuClippingRect::new(0.0, 0.0, 0.5, 1.0)
+    );
+    assert_eq!(
+        plan.contexts()[1].layout().unwrap().channel(),
+        WgpuMaskChannel::Red
+    );
+    assert_eq!(
+        plan.contexts()[1].layout().unwrap().bounds(),
+        WgpuClippingRect::new(0.5, 0.0, 0.5, 1.0)
+    );
+    assert_eq!(
+        plan.contexts()[2].layout().unwrap().channel(),
+        WgpuMaskChannel::Green
+    );
+    assert_eq!(
+        plan.contexts()[2].layout().unwrap().bounds(),
+        WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0)
+    );
+    assert_eq!(
+        plan.contexts()[4].layout().unwrap().channel_flag(),
+        [0.0, 0.0, 0.0, 1.0]
+    );
+}
+
+#[test]
+fn rejects_more_than_single_texture_clipping_layout_capacity() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = (0..37)
+        .map(|index| test_mesh_with_masks(0, index as f32, vec![index]))
+        .collect::<Vec<_>>();
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+    let mut plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+
+    let error = plan.assign_single_texture_layouts().unwrap_err();
+
+    assert_eq!(
+        error,
+        WgpuClippingLayoutError::TooManyMasksForSingleTexture { mask_count: 37 }
+    );
 }
 
 #[test]

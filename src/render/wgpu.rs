@@ -184,10 +184,126 @@ impl WgpuMeshBuffers {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WgpuMaskChannel {
+    Red,
+    Green,
+    Blue,
+    Alpha,
+}
+
+impl WgpuMaskChannel {
+    pub fn index(self) -> usize {
+        match self {
+            Self::Red => 0,
+            Self::Green => 1,
+            Self::Blue => 2,
+            Self::Alpha => 3,
+        }
+    }
+
+    pub fn flag(self) -> [f32; 4] {
+        match self {
+            Self::Red => [1.0, 0.0, 0.0, 0.0],
+            Self::Green => [0.0, 1.0, 0.0, 0.0],
+            Self::Blue => [0.0, 0.0, 1.0, 0.0],
+            Self::Alpha => [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
+    fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Red),
+            1 => Some(Self::Green),
+            2 => Some(Self::Blue),
+            3 => Some(Self::Alpha),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WgpuClippingRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl WgpuClippingRect {
+    pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub fn x(&self) -> f32 {
+        self.x
+    }
+
+    pub fn y(&self) -> f32 {
+        self.y
+    }
+
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn height(&self) -> f32 {
+        self.height
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WgpuClippingLayout {
+    channel: WgpuMaskChannel,
+    bounds: WgpuClippingRect,
+}
+
+impl WgpuClippingLayout {
+    pub fn new(channel: WgpuMaskChannel, bounds: WgpuClippingRect) -> Self {
+        Self { channel, bounds }
+    }
+
+    pub fn channel(&self) -> WgpuMaskChannel {
+        self.channel
+    }
+
+    pub fn channel_flag(&self) -> [f32; 4] {
+        self.channel.flag()
+    }
+
+    pub fn bounds(&self) -> WgpuClippingRect {
+        self.bounds
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WgpuClippingLayoutError {
+    TooManyMasksForSingleTexture { mask_count: usize },
+}
+
+impl std::fmt::Display for WgpuClippingLayoutError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooManyMasksForSingleTexture { mask_count } => write!(
+                formatter,
+                "single mask texture supports at most 36 clipping contexts, got {mask_count}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for WgpuClippingLayoutError {}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct WgpuClippingContext {
     masks: Vec<i32>,
     drawable_indices: Vec<usize>,
+    layout: Option<WgpuClippingLayout>,
 }
 
 impl WgpuClippingContext {
@@ -198,9 +314,13 @@ impl WgpuClippingContext {
     pub fn drawable_indices(&self) -> &[usize] {
         &self.drawable_indices
     }
+
+    pub fn layout(&self) -> Option<WgpuClippingLayout> {
+        self.layout
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WgpuClippingPlan {
     contexts: Vec<WgpuClippingContext>,
     unmasked_drawable_indices: Vec<usize>,
@@ -226,6 +346,7 @@ impl WgpuClippingPlan {
                 contexts.push(WgpuClippingContext {
                     masks: drawable.masks().to_vec(),
                     drawable_indices: vec![drawable_index],
+                    layout: None,
                 });
             }
         }
@@ -243,6 +364,34 @@ impl WgpuClippingPlan {
     pub fn unmasked_drawable_indices(&self) -> &[usize] {
         &self.unmasked_drawable_indices
     }
+
+    pub fn assign_single_texture_layouts(&mut self) -> Result<(), WgpuClippingLayoutError> {
+        let using_clip_count = self.contexts.len();
+        if using_clip_count > 36 {
+            return Err(WgpuClippingLayoutError::TooManyMasksForSingleTexture {
+                mask_count: using_clip_count,
+            });
+        }
+
+        let div = using_clip_count / 4;
+        let rem = using_clip_count % 4;
+        let mut context_index = 0;
+
+        for channel_index in 0..4 {
+            let layout_count = div + usize::from(channel_index < rem);
+            let channel = WgpuMaskChannel::from_index(channel_index).expect("valid RGBA channel");
+
+            for layout_index in 0..layout_count {
+                self.contexts[context_index].layout = Some(WgpuClippingLayout::new(
+                    channel,
+                    clipping_layout_bounds(layout_index, layout_count),
+                ));
+                context_index += 1;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
@@ -256,6 +405,25 @@ fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
     sorted_right.sort_unstable();
 
     sorted_left == sorted_right
+}
+
+fn clipping_layout_bounds(layout_index: usize, layout_count: usize) -> WgpuClippingRect {
+    match layout_count {
+        0 => WgpuClippingRect::new(0.0, 0.0, 0.0, 0.0),
+        1 => WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
+        2 => WgpuClippingRect::new(layout_index as f32 * 0.5, 0.0, 0.5, 1.0),
+        3 | 4 => {
+            let xpos = layout_index % 2;
+            let ypos = layout_index / 2;
+            WgpuClippingRect::new(xpos as f32 * 0.5, ypos as f32 * 0.5, 0.5, 0.5)
+        }
+        5..=9 => {
+            let xpos = layout_index % 3;
+            let ypos = layout_index / 3;
+            WgpuClippingRect::new(xpos as f32 / 3.0, ypos as f32 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+        }
+        _ => unreachable!("single texture channel layouts are capped at 9 cells"),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
