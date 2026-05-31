@@ -117,6 +117,7 @@ pub struct WgpuDrawableBuffers {
     opacity: f32,
     draw_order: f32,
     masks: Vec<i32>,
+    bounds: Option<WgpuClippingRect>,
 }
 
 impl WgpuDrawableBuffers {
@@ -150,6 +151,10 @@ impl WgpuDrawableBuffers {
 
     pub fn masks(&self) -> &[i32] {
         &self.masks
+    }
+
+    pub fn bounds(&self) -> Option<WgpuClippingRect> {
+        self.bounds
     }
 }
 
@@ -255,6 +260,25 @@ impl WgpuClippingRect {
     pub fn height(&self) -> f32 {
         self.height
     }
+
+    fn expanded(self, margin_ratio: f32) -> Self {
+        let margin_x = self.width * margin_ratio;
+        let margin_y = self.height * margin_ratio;
+        Self::new(
+            self.x - margin_x,
+            self.y - margin_y,
+            self.width + margin_x * 2.0,
+            self.height + margin_y * 2.0,
+        )
+    }
+
+    fn union(self, other: Self) -> Self {
+        let min_x = self.x.min(other.x);
+        let min_y = self.y.min(other.y);
+        let max_x = (self.x + self.width).max(other.x + other.width);
+        let max_y = (self.y + self.height).max(other.y + other.height);
+        Self::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -284,6 +308,9 @@ impl WgpuClippingLayout {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WgpuClippingLayoutError {
     TooManyMasksForSingleTexture { mask_count: usize },
+    MissingDrawableBounds { drawable_index: usize },
+    MissingLayout { context_index: usize },
+    DegenerateClippedBounds { context_index: usize },
 }
 
 impl std::fmt::Display for WgpuClippingLayoutError {
@@ -292,6 +319,19 @@ impl std::fmt::Display for WgpuClippingLayoutError {
             Self::TooManyMasksForSingleTexture { mask_count } => write!(
                 formatter,
                 "single mask texture supports at most 36 clipping contexts, got {mask_count}"
+            ),
+            Self::MissingDrawableBounds { drawable_index } => {
+                write!(
+                    formatter,
+                    "drawable {drawable_index} has no clipping bounds"
+                )
+            }
+            Self::MissingLayout { context_index } => {
+                write!(formatter, "clipping context {context_index} has no layout")
+            }
+            Self::DegenerateClippedBounds { context_index } => write!(
+                formatter,
+                "clipping context {context_index} has degenerate clipped bounds"
             ),
         }
     }
@@ -304,6 +344,9 @@ pub struct WgpuClippingContext {
     masks: Vec<i32>,
     drawable_indices: Vec<usize>,
     layout: Option<WgpuClippingLayout>,
+    all_clipped_draw_rect: Option<WgpuClippingRect>,
+    matrix_for_mask: Option<Matrix44>,
+    matrix_for_draw: Option<Matrix44>,
 }
 
 impl WgpuClippingContext {
@@ -317,6 +360,18 @@ impl WgpuClippingContext {
 
     pub fn layout(&self) -> Option<WgpuClippingLayout> {
         self.layout
+    }
+
+    pub fn all_clipped_draw_rect(&self) -> Option<WgpuClippingRect> {
+        self.all_clipped_draw_rect
+    }
+
+    pub fn matrix_for_mask(&self) -> Option<Matrix44> {
+        self.matrix_for_mask
+    }
+
+    pub fn matrix_for_draw(&self) -> Option<Matrix44> {
+        self.matrix_for_draw
     }
 }
 
@@ -347,6 +402,9 @@ impl WgpuClippingPlan {
                     masks: drawable.masks().to_vec(),
                     drawable_indices: vec![drawable_index],
                     layout: None,
+                    all_clipped_draw_rect: None,
+                    matrix_for_mask: None,
+                    matrix_for_draw: None,
                 });
             }
         }
@@ -392,6 +450,33 @@ impl WgpuClippingPlan {
 
         Ok(())
     }
+
+    pub fn prepare_single_texture_masks(
+        &mut self,
+        mesh_buffers: &WgpuMeshBuffers,
+    ) -> Result<(), WgpuClippingLayoutError> {
+        self.assign_single_texture_layouts()?;
+
+        for context_index in 0..self.contexts.len() {
+            let layout = self.contexts[context_index]
+                .layout
+                .ok_or(WgpuClippingLayoutError::MissingLayout { context_index })?;
+            let bounds = clipped_draw_total_bounds(
+                mesh_buffers,
+                self.contexts[context_index].drawable_indices(),
+            )?
+            .ok_or(WgpuClippingLayoutError::DegenerateClippedBounds { context_index })?
+            .expanded(0.05);
+            let (matrix_for_mask, matrix_for_draw) = clipping_matrices(bounds, layout.bounds())
+                .ok_or(WgpuClippingLayoutError::DegenerateClippedBounds { context_index })?;
+
+            self.contexts[context_index].all_clipped_draw_rect = Some(bounds);
+            self.contexts[context_index].matrix_for_mask = Some(matrix_for_mask);
+            self.contexts[context_index].matrix_for_draw = Some(matrix_for_draw);
+        }
+
+        Ok(())
+    }
 }
 
 fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
@@ -424,6 +509,53 @@ fn clipping_layout_bounds(layout_index: usize, layout_count: usize) -> WgpuClipp
         }
         _ => unreachable!("single texture channel layouts are capped at 9 cells"),
     }
+}
+
+fn clipped_draw_total_bounds(
+    mesh_buffers: &WgpuMeshBuffers,
+    drawable_indices: &[usize],
+) -> Result<Option<WgpuClippingRect>, WgpuClippingLayoutError> {
+    let mut bounds: Option<WgpuClippingRect> = None;
+
+    for &drawable_index in drawable_indices {
+        let drawable_bounds = mesh_buffers
+            .drawables()
+            .get(drawable_index)
+            .ok_or(WgpuClippingLayoutError::MissingDrawableBounds { drawable_index })?
+            .bounds()
+            .ok_or(WgpuClippingLayoutError::MissingDrawableBounds { drawable_index })?;
+
+        bounds = Some(match bounds {
+            Some(bounds) => bounds.union(drawable_bounds),
+            None => drawable_bounds,
+        });
+    }
+
+    Ok(bounds)
+}
+
+fn clipping_matrices(
+    bounds: WgpuClippingRect,
+    layout: WgpuClippingRect,
+) -> Option<(Matrix44, Matrix44)> {
+    if bounds.width <= 0.0 || bounds.height <= 0.0 {
+        return None;
+    }
+
+    let scale_x = layout.width / bounds.width;
+    let scale_y = layout.height / bounds.height;
+    let draw_translate_x = -bounds.x * scale_x + layout.x;
+    let draw_translate_y = -bounds.y * scale_y + layout.y;
+
+    let mut matrix_for_draw = Matrix44::identity();
+    matrix_for_draw.scale(scale_x, scale_y);
+    matrix_for_draw.translate(draw_translate_x, draw_translate_y);
+
+    let mut matrix_for_mask = Matrix44::identity();
+    matrix_for_mask.scale(scale_x * 2.0, scale_y * 2.0);
+    matrix_for_mask.translate(draw_translate_x * 2.0 - 1.0, draw_translate_y * 2.0 - 1.0);
+
+    Some((matrix_for_mask, matrix_for_draw))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -924,7 +1056,31 @@ pub fn create_wgpu_drawable_buffers(
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
         masks: mesh.masks().to_vec(),
+        bounds: drawable_vertex_bounds(mesh.vertices()),
     })
+}
+
+fn drawable_vertex_bounds(vertices: &[Moc3DrawableVertex]) -> Option<WgpuClippingRect> {
+    let first = vertices.first()?;
+    let mut min_x = first.position()[0];
+    let mut min_y = first.position()[1];
+    let mut max_x = min_x;
+    let mut max_y = min_y;
+
+    for vertex in vertices.iter().skip(1) {
+        let [x, y] = vertex.position();
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+
+    Some(WgpuClippingRect::new(
+        min_x,
+        min_y,
+        max_x - min_x,
+        max_y - min_y,
+    ))
 }
 
 fn create_wgpu_transform(
