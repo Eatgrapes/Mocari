@@ -183,6 +183,75 @@ impl MotionCurve {
     }
 }
 
+pub fn easing_sine(value: f32) -> f32 {
+    if value < 0.0 {
+        return 0.0;
+    }
+
+    if value > 1.0 {
+        return 1.0;
+    }
+
+    0.5 - 0.5 * (value * std::f32::consts::PI).cos()
+}
+
+pub fn motion_fade_in_weight(
+    user_time_seconds: f32,
+    fade_in_start_time: f32,
+    fade_in_seconds: f32,
+) -> f32 {
+    if fade_in_seconds <= 0.0 {
+        1.0
+    } else {
+        easing_sine((user_time_seconds - fade_in_start_time) / fade_in_seconds)
+    }
+}
+
+pub fn motion_fade_out_weight(
+    user_time_seconds: f32,
+    end_time_seconds: f32,
+    fade_out_seconds: f32,
+) -> f32 {
+    if fade_out_seconds <= 0.0 || end_time_seconds < 0.0 {
+        1.0
+    } else {
+        easing_sine((end_time_seconds - user_time_seconds) / fade_out_seconds)
+    }
+}
+
+pub fn parameter_curve_fade_weight(
+    motion_weight: f32,
+    motion_fade_in: f32,
+    motion_fade_out: f32,
+    curve_fade_in_seconds: Option<f32>,
+    curve_fade_out_seconds: Option<f32>,
+    user_time_seconds: f32,
+    fade_in_start_time: f32,
+    end_time_seconds: f32,
+) -> f32 {
+    if curve_fade_in_seconds.is_none() && curve_fade_out_seconds.is_none() {
+        return motion_weight;
+    }
+
+    let fade_in = match curve_fade_in_seconds {
+        Some(0.0) => 1.0,
+        Some(seconds) => easing_sine((user_time_seconds - fade_in_start_time) / seconds),
+        None => motion_fade_in,
+    };
+    let fade_out = match curve_fade_out_seconds {
+        Some(0.0) => 1.0,
+        Some(_) if end_time_seconds < 0.0 => 1.0,
+        Some(seconds) => easing_sine((end_time_seconds - user_time_seconds) / seconds),
+        None => motion_fade_out,
+    };
+
+    motion_weight * fade_in * fade_out
+}
+
+pub fn apply_motion_fade(source_value: f32, target_value: f32, fade_weight: f32) -> f32 {
+    source_value + (target_value - source_value) * fade_weight
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct MotionPoint {
     pub time: f32,

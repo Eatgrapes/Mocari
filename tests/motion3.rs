@@ -1,6 +1,10 @@
 use rusty_live2d::{
     Error,
     json::{Motion3, MotionPoint, MotionSegment},
+    json::{
+        apply_motion_fade, easing_sine, motion_fade_in_weight, motion_fade_out_weight,
+        parameter_curve_fade_weight,
+    },
 };
 
 #[test]
@@ -174,6 +178,41 @@ fn samples_unrestricted_bezier_motion_segment_by_solving_time() {
         .clone();
 
     assert_close(curve.sample(0.5).unwrap(), 0.889_881_6);
+}
+
+#[test]
+fn motion_fade_uses_framework_easing_sine() {
+    assert_eq!(easing_sine(-0.5), 0.0);
+    assert_eq!(easing_sine(1.5), 1.0);
+    assert_close(easing_sine(0.5), 0.5);
+
+    assert_eq!(motion_fade_in_weight(0.5, 0.0, 0.0), 1.0);
+    assert_close(motion_fade_in_weight(0.5, 0.0, 1.0), 0.5);
+    assert_eq!(motion_fade_out_weight(2.0, -1.0, 1.0), 1.0);
+    assert_close(motion_fade_out_weight(0.5, 1.0, 1.0), 0.5);
+}
+
+#[test]
+fn parameter_curve_fade_matches_framework_override_rules() {
+    assert_close(
+        parameter_curve_fade_weight(0.3, 0.5, 0.75, None, None, 1.0, 0.0, 4.0),
+        0.3,
+    );
+
+    assert_close(
+        parameter_curve_fade_weight(0.8, 0.25, 0.75, Some(2.0), None, 1.0, 0.0, 4.0),
+        0.3,
+    );
+
+    assert_close(
+        parameter_curve_fade_weight(0.8, 0.25, 0.75, Some(0.0), Some(0.0), 1.0, 0.0, 4.0),
+        0.8,
+    );
+}
+
+#[test]
+fn applies_motion_fade_to_source_and_target_values() {
+    assert_eq!(apply_motion_fade(2.0, 10.0, 0.25), 4.0);
 }
 
 #[test]
