@@ -1,3 +1,5 @@
+use super::math::{Vector2, direction_to_radian};
+
 const MAXIMUM_WEIGHT: f32 = 100.0;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -135,4 +137,19 @@ fn weighted_normalized_value(
 ) -> f32 {
     normalize_physics_parameter(value, parameter, normalization, reflect)
         * (weight_percent / MAXIMUM_WEIGHT)
+}
+
+pub fn physics_output_translation_x(translation: Vector2, reflect: bool) -> f32 {
+    let value = translation.x();
+    if reflect { value * -1.0 } else { value }
+}
+
+pub fn physics_output_translation_y(translation: Vector2, reflect: bool) -> f32 {
+    let value = translation.y();
+    if reflect { value * -1.0 } else { value }
+}
+
+pub fn physics_output_angle(translation: Vector2, parent_gravity: Vector2, reflect: bool) -> f32 {
+    let value = direction_to_radian(parent_gravity, translation);
+    if reflect { value * -1.0 } else { value }
 }

@@ -1,5 +1,51 @@
 use std::collections::BTreeMap;
 
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Vector2 {
+    x: f32,
+    y: f32,
+}
+
+impl Vector2 {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
+    pub fn x(&self) -> f32 {
+        self.x
+    }
+
+    pub fn y(&self) -> f32 {
+        self.y
+    }
+}
+
+pub fn degrees_to_radian(degrees: f32) -> f32 {
+    (degrees / 180.0) * std::f32::consts::PI
+}
+
+pub fn radian_to_degrees(radian: f32) -> f32 {
+    (radian * 180.0) / std::f32::consts::PI
+}
+
+pub fn direction_to_radian(from: Vector2, to: Vector2) -> f32 {
+    let mut result = to.y.atan2(to.x) - from.y.atan2(from.x);
+
+    while result < -std::f32::consts::PI {
+        result += std::f32::consts::PI * 2.0;
+    }
+
+    while result > std::f32::consts::PI {
+        result -= std::f32::consts::PI * 2.0;
+    }
+
+    result
+}
+
+pub fn radian_to_direction(radian: f32) -> Vector2 {
+    Vector2::new(radian.sin(), radian.cos())
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Matrix44 {
     values: [f32; 16],

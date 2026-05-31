@@ -1,4 +1,8 @@
-use rusty_live2d::core::{PhysicsInputAccumulator, PhysicsRange, normalize_physics_parameter};
+use rusty_live2d::core::{
+    PhysicsInputAccumulator, PhysicsRange, Vector2, direction_to_radian,
+    normalize_physics_parameter, physics_output_angle, physics_output_translation_x,
+    physics_output_translation_y, radian_to_direction,
+};
 
 fn assert_close(actual: f32, expected: f32) {
     assert!(
@@ -36,4 +40,34 @@ fn physics_input_accumulator_applies_weighted_channels() {
     assert_close(input.translation_x(), 5.0);
     assert_close(input.translation_y(), 2.5);
     assert_close(input.angle(), 15.0);
+}
+
+#[test]
+fn physics_output_translation_reflects_axes() {
+    let translation = Vector2::new(3.0, -4.0);
+
+    assert_close(physics_output_translation_x(translation, false), 3.0);
+    assert_close(physics_output_translation_x(translation, true), -3.0);
+    assert_close(physics_output_translation_y(translation, false), -4.0);
+    assert_close(physics_output_translation_y(translation, true), 4.0);
+}
+
+#[test]
+fn physics_output_angle_uses_direction_delta() {
+    let parent_gravity = Vector2::new(0.0, 1.0);
+    let translation = Vector2::new(1.0, 0.0);
+
+    assert_close(
+        direction_to_radian(parent_gravity, translation),
+        -std::f32::consts::FRAC_PI_2,
+    );
+    assert_eq!(radian_to_direction(0.0), parent_gravity);
+    assert_close(
+        physics_output_angle(translation, parent_gravity, false),
+        -std::f32::consts::FRAC_PI_2,
+    );
+    assert_close(
+        physics_output_angle(translation, parent_gravity, true),
+        std::f32::consts::FRAC_PI_2,
+    );
 }
