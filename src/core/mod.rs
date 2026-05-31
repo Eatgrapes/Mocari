@@ -7,6 +7,7 @@ mod keyforms;
 mod math;
 mod parameters;
 mod physics;
+mod update_order;
 
 pub use art_mesh::{
     affect_art_mesh_pair, apply_art_mesh_blend_shape_delta, apply_parent_part_opacity,
@@ -39,4 +40,8 @@ pub use physics::{
     parent_gravity_for_physics_output, physics_output_angle_with_parent_gravity,
     physics_output_translation_x, physics_output_translation_y, stabilize_physics_particles,
     update_physics_particles,
+};
+pub use update_order::{
+    ModelUpdateStep, semantic_model_update_order, should_affect_glues, should_blend_glues,
+    should_run_offscreen_stage,
 };
