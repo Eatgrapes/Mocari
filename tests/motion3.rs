@@ -91,7 +91,7 @@ fn samples_stepped_motion_segment() {
             "Curves": [
                 {
                     "Target": "Parameter",
-                    "Id": "ParamEyeLOpen",
+                    "Id": "ParamInputA",
                     "Segments": [0.0, 0.0, 2, 1.0, 1.0]
                 }
             ]

@@ -21,8 +21,7 @@ const WINDOW_WIDTH: u32 = 900;
 const WINDOW_HEIGHT: u32 = 900;
 const MASK_TEXTURE_SIZE: u32 = 256;
 const MODEL_VIEW_FILL: f32 = 1.85;
-const DEFAULT_MODEL_PATH: &str =
-    "assets/models/hiyori_free_en/runtime/hiyori_free_t08.model3.json";
+const DEFAULT_MODEL_PATH: &str = "assets/models/hiyori_free_en/runtime/hiyori_free_t08.model3.json";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;

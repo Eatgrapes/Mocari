@@ -8,7 +8,6 @@ use crate::{
     },
 };
 
-
 #[derive(Debug, Clone)]
 pub struct DefaultModel {
     model: Model3,

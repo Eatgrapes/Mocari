@@ -1,5 +1,5 @@
 use crate::{
-    Error, Result,
+    Result,
     core::{
         Vector2, WarpInterpolation, rotation_deformer_transform_point,
         warp_deformer_transform_target,
@@ -7,8 +7,9 @@ use crate::{
 };
 
 use super::{
-    Endianness, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CountInfo, Moc3DrawableMesh,
-    Moc3DrawableVertex, Moc3Header, Moc3SectionOffsets, build_moc3_drawable_mesh,
+    Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CountInfo, Moc3DrawableMesh, Moc3DrawableVertex,
+    Moc3Header, Moc3SectionOffsets, build_moc3_drawable_mesh,
+    parse::{invalid_moc3, read_bool_section, read_f32_section, read_i32_section, to_usize},
 };
 
 const DEFORMER_PARENT_DEFORMER_INDICES_SLOT: usize = 16;
@@ -272,7 +273,7 @@ impl Moc3Deformers {
             .copied()
             .map(|value| {
                 Moc3DeformerKind::from_raw(value)
-                    .ok_or_else(|| invalid_deformers(format!("unsupported deformer type {value}")))
+                    .ok_or_else(|| invalid_moc3(format!("unsupported deformer type {value}")))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -894,107 +895,4 @@ fn correct_vertices_around_anchor(
     }
 
     Some(())
-}
-
-fn read_i32_section(
-    bytes: &[u8],
-    offsets: &Moc3SectionOffsets,
-    slot: usize,
-    count: usize,
-    endianness: Endianness,
-) -> Result<Vec<i32>> {
-    read_section(bytes, offsets, slot, count, 4, |bytes, offset| {
-        let raw = [
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ];
-        match endianness {
-            Endianness::Little => i32::from_le_bytes(raw),
-            Endianness::Big => i32::from_be_bytes(raw),
-        }
-    })
-}
-
-fn read_f32_section(
-    bytes: &[u8],
-    offsets: &Moc3SectionOffsets,
-    slot: usize,
-    count: usize,
-    endianness: Endianness,
-) -> Result<Vec<f32>> {
-    read_section(bytes, offsets, slot, count, 4, |bytes, offset| {
-        let raw = [
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ];
-        match endianness {
-            Endianness::Little => f32::from_le_bytes(raw),
-            Endianness::Big => f32::from_be_bytes(raw),
-        }
-    })
-}
-
-fn read_bool_section(
-    bytes: &[u8],
-    offsets: &Moc3SectionOffsets,
-    slot: usize,
-    count: usize,
-    endianness: Endianness,
-) -> Result<Vec<bool>> {
-    read_i32_section(bytes, offsets, slot, count, endianness)
-        .map(|values| values.into_iter().map(|value| value == 1).collect())
-}
-
-fn read_section<T>(
-    bytes: &[u8],
-    offsets: &Moc3SectionOffsets,
-    slot: usize,
-    count: usize,
-    element_size: usize,
-    read: impl Fn(&[u8], usize) -> T,
-) -> Result<Vec<T>> {
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-
-    let offset = offsets
-        .section_offset(slot)
-        .ok_or_else(|| invalid_deformers(format!("section slot {slot} is outside offset table")))?;
-    if offset == 0 {
-        return Err(invalid_deformers(format!(
-            "section slot {slot} has no offset"
-        )));
-    }
-
-    let offset = usize::try_from(offset)
-        .map_err(|_| invalid_deformers(format!("section slot {slot} offset is too large")))?;
-    let byte_len = count
-        .checked_mul(element_size)
-        .ok_or_else(|| invalid_deformers(format!("section slot {slot} size overflows")))?;
-    if bytes.len().saturating_sub(offset) < byte_len {
-        return Err(invalid_deformers(format!(
-            "section slot {slot} is incomplete"
-        )));
-    }
-
-    let mut values = Vec::with_capacity(count);
-    for index in 0..count {
-        values.push(read(bytes, offset + index * element_size));
-    }
-
-    Ok(values)
-}
-
-fn to_usize(value: u32, name: &'static str) -> Result<usize> {
-    usize::try_from(value).map_err(|_| invalid_deformers(format!("{name} is too large")))
-}
-
-fn invalid_deformers(message: impl Into<String>) -> Error {
-    Error::InvalidMoc3 {
-        message: message.into(),
-    }
 }
