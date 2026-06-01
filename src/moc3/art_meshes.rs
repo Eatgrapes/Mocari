@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{Error, Result, core::draw_order_from_raw};
 
 use super::{Endianness, Moc3CountInfo, Moc3Header, Moc3SectionOffsets};
 
@@ -6,8 +6,10 @@ const TEXTURE_INDICES_SLOT: usize = 41;
 const DRAWABLE_FLAGS_SLOT: usize = 42;
 const DRAWABLE_BLEND_ADDITIVE: u8 = 1 << 0;
 const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
+const ART_MESH_KEYFORM_BINDING_BAND_INDICES_SLOT: usize = 34;
 const KEYFORM_BEGIN_INDICES_SLOT: usize = 35;
 const KEYFORM_COUNTS_SLOT: usize = 36;
+const ART_MESH_PARENT_DEFORMER_INDICES_SLOT: usize = 40;
 const VERTEX_COUNTS_SLOT: usize = 43;
 const UV_BEGIN_INDICES_SLOT: usize = 44;
 const POSITION_INDEX_BEGIN_INDICES_SLOT: usize = 45;
@@ -17,6 +19,7 @@ const MASK_COUNTS_SLOT: usize = 48;
 const UV_XYS_SLOT: usize = 78;
 const POSITION_INDICES_SLOT: usize = 79;
 const DRAWABLE_MASKS_SLOT: usize = 80;
+const RENDER_ORDER_INDICES_SLOT: usize = 87;
 const ART_MESH_KEYFORM_OPACITIES_SLOT: usize = 68;
 const ART_MESH_KEYFORM_DRAW_ORDERS_SLOT: usize = 69;
 const KEYFORM_POSITION_BEGIN_INDICES_SLOT: usize = 70;
@@ -94,6 +97,9 @@ impl Moc3ArtMeshInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Moc3ArtMeshes {
     meshes: Vec<Moc3ArtMeshInfo>,
+    keyform_binding_band_indices: Vec<i32>,
+    parent_deformer_indices: Vec<i32>,
+    render_orders: Vec<i32>,
     uv_xys: Vec<f32>,
     position_indices: Vec<i16>,
     drawable_masks: Vec<i32>,
@@ -106,6 +112,55 @@ impl Moc3ArtMeshes {
         position_indices: Vec<i16>,
         drawable_masks: Vec<i32>,
     ) -> Result<Self> {
+        let mesh_count = meshes.len();
+        Self::from_parts_with_hierarchy(
+            meshes,
+            vec![0; mesh_count],
+            vec![-1; mesh_count],
+            uv_xys,
+            position_indices,
+            drawable_masks,
+        )
+    }
+
+    pub fn from_parts_with_hierarchy(
+        meshes: Vec<Moc3ArtMeshInfo>,
+        keyform_binding_band_indices: Vec<i32>,
+        parent_deformer_indices: Vec<i32>,
+        uv_xys: Vec<f32>,
+        position_indices: Vec<i16>,
+        drawable_masks: Vec<i32>,
+    ) -> Result<Self> {
+        let render_orders = default_render_orders(meshes.len());
+        Self::from_parts_with_hierarchy_and_render_orders(
+            meshes,
+            keyform_binding_band_indices,
+            parent_deformer_indices,
+            render_orders,
+            uv_xys,
+            position_indices,
+            drawable_masks,
+        )
+    }
+
+    pub fn from_parts_with_hierarchy_and_render_orders(
+        meshes: Vec<Moc3ArtMeshInfo>,
+        keyform_binding_band_indices: Vec<i32>,
+        parent_deformer_indices: Vec<i32>,
+        render_orders: Vec<i32>,
+        uv_xys: Vec<f32>,
+        position_indices: Vec<i16>,
+        drawable_masks: Vec<i32>,
+    ) -> Result<Self> {
+        if keyform_binding_band_indices.len() != meshes.len()
+            || parent_deformer_indices.len() != meshes.len()
+            || render_orders.len() != meshes.len()
+        {
+            return Err(invalid_art_meshes(
+                "art mesh hierarchy metadata lengths do not match",
+            ));
+        }
+
         for (index, mesh) in meshes.iter().copied().enumerate() {
             validate_mesh_ranges(
                 index,
@@ -118,6 +173,9 @@ impl Moc3ArtMeshes {
 
         Ok(Self {
             meshes,
+            keyform_binding_band_indices,
+            parent_deformer_indices,
+            render_orders,
             uv_xys,
             position_indices,
             drawable_masks,
@@ -129,7 +187,16 @@ impl Moc3ArtMeshes {
         let offsets = Moc3SectionOffsets::parse(bytes)?;
         let counts = Moc3CountInfo::parse(bytes)?;
         let art_mesh_count = to_usize(counts.art_meshes(), "art mesh count")?;
+        let render_orders = parse_render_orders(bytes, &offsets, &counts, art_mesh_count)?;
 
+        let keyform_binding_band_indices = read_i32_section_or_default(
+            bytes,
+            &offsets,
+            ART_MESH_KEYFORM_BINDING_BAND_INDICES_SLOT,
+            art_mesh_count,
+            header.endianness(),
+            0,
+        )?;
         let texture_indices = read_i32_section(
             bytes,
             &offsets,
@@ -180,6 +247,14 @@ impl Moc3ArtMeshes {
             art_mesh_count,
             header.endianness(),
         )?;
+        let parent_deformer_indices = read_i32_section_or_default(
+            bytes,
+            &offsets,
+            ART_MESH_PARENT_DEFORMER_INDICES_SLOT,
+            art_mesh_count,
+            header.endianness(),
+            -1,
+        )?;
         let uv_xys = read_f32_section(
             bytes,
             &offsets,
@@ -216,11 +291,31 @@ impl Moc3ArtMeshes {
             ));
         }
 
-        Self::from_parts(meshes, uv_xys, position_indices, drawable_masks)
+        Self::from_parts_with_hierarchy_and_render_orders(
+            meshes,
+            keyform_binding_band_indices,
+            parent_deformer_indices,
+            render_orders,
+            uv_xys,
+            position_indices,
+            drawable_masks,
+        )
     }
 
     pub fn meshes(&self) -> &[Moc3ArtMeshInfo] {
         &self.meshes
+    }
+
+    pub fn keyform_binding_band_indices(&self) -> &[i32] {
+        &self.keyform_binding_band_indices
+    }
+
+    pub fn parent_deformer_indices(&self) -> &[i32] {
+        &self.parent_deformer_indices
+    }
+
+    pub fn render_orders(&self) -> &[i32] {
+        &self.render_orders
     }
 
     pub fn uv_xys(&self) -> &[f32] {
@@ -254,6 +349,18 @@ impl Moc3ArtMeshes {
         let start = usize::try_from(mesh.mask_begin_index).ok()?;
         let len = usize::try_from(mesh.mask_count).ok()?;
         self.drawable_masks.get(start..start.checked_add(len)?)
+    }
+
+    pub fn art_mesh_keyform_binding_band_index(&self, index: usize) -> Option<i32> {
+        self.keyform_binding_band_indices.get(index).copied()
+    }
+
+    pub fn art_mesh_parent_deformer_index(&self, index: usize) -> Option<i32> {
+        self.parent_deformer_indices.get(index).copied()
+    }
+
+    pub fn art_mesh_render_order(&self, index: usize) -> Option<i32> {
+        self.render_orders.get(index).copied()
     }
 }
 
@@ -462,6 +569,7 @@ pub struct Moc3DrawableMesh {
     drawable_flags: u8,
     opacity: f32,
     draw_order: f32,
+    render_order: i32,
     vertices: Vec<Moc3DrawableVertex>,
     indices: Vec<u16>,
     masks: Vec<i32>,
@@ -496,11 +604,35 @@ impl Moc3DrawableMesh {
         indices: Vec<u16>,
         masks: Vec<i32>,
     ) -> Self {
+        Self::from_parts_with_render_order(
+            texture_index,
+            drawable_flags,
+            opacity,
+            draw_order,
+            draw_order_from_raw(draw_order),
+            vertices,
+            indices,
+            masks,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts_with_render_order(
+        texture_index: i32,
+        drawable_flags: u8,
+        opacity: f32,
+        draw_order: f32,
+        render_order: i32,
+        vertices: Vec<Moc3DrawableVertex>,
+        indices: Vec<u16>,
+        masks: Vec<i32>,
+    ) -> Self {
         Self {
             texture_index,
             drawable_flags,
             opacity,
             draw_order,
+            render_order,
             vertices,
             indices,
             masks,
@@ -525,6 +657,10 @@ impl Moc3DrawableMesh {
 
     pub fn draw_order(&self) -> f32 {
         self.draw_order
+    }
+
+    pub fn render_order(&self) -> i32 {
+        self.render_order
     }
 
     pub fn vertices(&self) -> &[Moc3DrawableVertex] {
@@ -571,11 +707,12 @@ pub fn build_moc3_drawable_mesh(
         indices.push(position_index);
     }
 
-    Some(Moc3DrawableMesh::from_parts(
+    Some(Moc3DrawableMesh::from_parts_with_render_order(
         mesh.texture_index,
         mesh.drawable_flags,
         keyform.opacity,
         keyform.draw_order,
+        art_meshes.art_mesh_render_order(art_mesh_index)?,
         vertices,
         indices,
         art_meshes.art_mesh_masks(art_mesh_index)?.to_vec(),
@@ -619,6 +756,67 @@ fn read_i32_section(
             Endianness::Big => i32::from_be_bytes(raw),
         }
     })
+}
+
+fn read_i32_section_or_default(
+    bytes: &[u8],
+    offsets: &Moc3SectionOffsets,
+    slot: usize,
+    count: usize,
+    endianness: Endianness,
+    default: i32,
+) -> Result<Vec<i32>> {
+    match offsets.section_offset(slot) {
+        Some(0) | None => Ok(vec![default; count]),
+        Some(_) => read_i32_section(bytes, offsets, slot, count, endianness),
+    }
+}
+
+fn parse_render_orders(
+    bytes: &[u8],
+    offsets: &Moc3SectionOffsets,
+    counts: &Moc3CountInfo,
+    art_mesh_count: usize,
+) -> Result<Vec<i32>> {
+    let mut render_orders = default_render_orders(art_mesh_count);
+    let object_count = to_usize(
+        counts.draw_order_group_objects(),
+        "draw order group object count",
+    )?;
+    if object_count == 0
+        || offsets
+            .section_offset(RENDER_ORDER_INDICES_SLOT)
+            .unwrap_or(0)
+            == 0
+    {
+        return Ok(render_orders);
+    }
+
+    let order_indices = read_i32_section(
+        bytes,
+        offsets,
+        RENDER_ORDER_INDICES_SLOT,
+        object_count,
+        Moc3Header::parse(bytes)?.endianness(),
+    )?;
+
+    for (rank, drawable_index) in order_indices.into_iter().enumerate() {
+        let Ok(index) = usize::try_from(drawable_index) else {
+            continue;
+        };
+        if let Some(render_order) = render_orders.get_mut(index) {
+            *render_order = i32::try_from(rank)
+                .map_err(|_| invalid_art_meshes("render order rank is too large"))?;
+        }
+    }
+
+    Ok(render_orders)
+}
+
+fn default_render_orders(mesh_count: usize) -> Vec<i32> {
+    (0..mesh_count)
+        .map(|index| i32::try_from(index).unwrap_or(i32::MAX))
+        .collect()
 }
 
 fn read_i16_section(
