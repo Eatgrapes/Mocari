@@ -2,11 +2,12 @@ use std::{fmt, fs, path::Path};
 
 use crate::{
     json::Model3,
-    moc3::{Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3DrawableMesh},
+    moc3::{
+        Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
+        Moc3KeyformBindings, build_moc3_drawable_meshes_for_default_pose,
+    },
 };
 
-pub const DEFAULT_MODEL3_PATH: &str =
-    "assets/models/hiyori_free_en/runtime/hiyori_free_t08.model3.json";
 
 #[derive(Debug, Clone)]
 pub struct DefaultModel {
@@ -96,10 +97,6 @@ impl fmt::Display for AssetLoadError {
 
 impl std::error::Error for AssetLoadError {}
 
-pub fn load_default_model() -> Result<DefaultModel, AssetLoadError> {
-    load_model(DEFAULT_MODEL3_PATH)
-}
-
 pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError> {
     let path = path.as_ref();
     let model_source = read_text(path)?;
@@ -112,9 +109,12 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
 
     let art_meshes = Moc3ArtMeshes::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let keyforms = Moc3ArtMeshKeyforms::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let deformers = Moc3Deformers::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let bindings = Moc3KeyformBindings::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let meshes = crate::moc3::build_moc3_drawable_meshes(&art_meshes, &keyforms)
-        .ok_or(AssetLoadError::DrawableMeshes)?;
+    let meshes =
+        build_moc3_drawable_meshes_for_default_pose(&art_meshes, &keyforms, &deformers, &bindings)
+            .ok_or(AssetLoadError::DrawableMeshes)?;
     let textures = model
         .textures()
         .iter()
