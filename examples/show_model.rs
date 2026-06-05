@@ -217,7 +217,8 @@ impl WindowState {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or(ExampleError("surface is not supported by this adapter"))?;
         let capabilities = surface.get_capabilities(&adapter);
-        config.format = preferred_surface_format(&capabilities.formats).unwrap_or(config.format);
+        config.format = preferred_surface_format(&capabilities.formats)
+            .ok_or(ExampleError("surface exposes no texture formats"))?;
         surface.configure(&device, &config);
 
         let renderer = WgpuLive2dRenderer::new(&device, config.format);

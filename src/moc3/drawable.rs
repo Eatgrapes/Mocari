@@ -117,6 +117,10 @@ impl Moc3DrawableMesh {
         self.opacity
     }
 
+    pub(crate) fn set_opacity(&mut self, opacity: f32) {
+        self.opacity = opacity;
+    }
+
     pub fn draw_order(&self) -> f32 {
         self.draw_order
     }

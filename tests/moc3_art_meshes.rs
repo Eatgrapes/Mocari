@@ -229,9 +229,14 @@ mod moc3_art_mesh_keyforms {
 }
 
 mod moc3_drawable_mesh {
+    use std::fs;
+
     use rusty_live2d::moc3::{
-        Moc3ArtMeshInfo, Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes,
-        Moc3DrawableBlendMode, build_moc3_drawable_mesh, build_moc3_drawable_meshes,
+        Moc3ArtMeshInfo, Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3Deformers,
+        Moc3DrawableBlendMode, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
+        build_moc3_drawable_mesh, build_moc3_drawable_meshes,
+        build_moc3_drawable_meshes_for_default_pose,
+        build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
     };
 
     #[test]
@@ -335,5 +340,70 @@ mod moc3_drawable_mesh {
         assert_eq!(meshes[1].texture_index(), 1);
         assert_eq!(meshes[1].opacity(), 0.5);
         assert_eq!(meshes[1].vertices()[0].position(), [2.0, 2.0]);
+    }
+
+    #[test]
+    fn builds_bundled_model_default_poses_from_bound_keyforms() {
+        for name in [
+            "Wanko", "Hiyori", "Haru", "Ren", "Mark", "Rice", "Natori", "Mao",
+        ] {
+            let bytes = fs::read(format!("assets/models/{name}/{name}.moc3")).unwrap();
+            let art_meshes = Moc3ArtMeshes::parse(&bytes).unwrap();
+            let keyforms = Moc3ArtMeshKeyforms::parse(&bytes).unwrap();
+            let deformers = Moc3Deformers::parse(&bytes).unwrap();
+            let bindings = Moc3KeyformBindings::parse(&bytes).unwrap();
+
+            let meshes = build_moc3_drawable_meshes_for_default_pose(
+                &art_meshes,
+                &keyforms,
+                &deformers,
+                &bindings,
+            )
+            .unwrap_or_else(|| panic!("{name} default pose should build from bound keyforms"));
+
+            assert_eq!(meshes.len(), art_meshes.meshes().len());
+        }
+    }
+
+    #[test]
+    fn parses_bundled_v53_offscreen_visibility_state() {
+        let bytes = fs::read("assets/models/Ren/Ren.moc3").unwrap();
+
+        let offscreen = Moc3OffscreenInfo::parse(&bytes).unwrap();
+
+        assert_eq!(offscreen.offscreen_count(), 24);
+        assert_eq!(offscreen.part_offscreen_index(17), Some(4));
+        assert_eq!(offscreen.part_offscreen_index(41), Some(17));
+        assert_eq!(offscreen.offscreen_owner_part_index(4), Some(17));
+        assert_eq!(offscreen.offscreen_owner_part_index(17), Some(41));
+        assert_eq!(offscreen.drawable_parent_part_index(91), Some(18));
+        assert_eq!(offscreen.drawable_parent_part_index(105), Some(17));
+    }
+
+    #[test]
+    fn bundled_v53_default_pose_keeps_effect_source_drawables_transparent() {
+        let bytes = fs::read("assets/models/Ren/Ren.moc3").unwrap();
+        let art_meshes = Moc3ArtMeshes::parse(&bytes).unwrap();
+        let keyforms = Moc3ArtMeshKeyforms::parse(&bytes).unwrap();
+        let deformers = Moc3Deformers::parse(&bytes).unwrap();
+        let bindings = Moc3KeyformBindings::parse(&bytes).unwrap();
+        let ids = Moc3Ids::parse(&bytes).unwrap();
+        let offscreen = Moc3OffscreenInfo::parse(&bytes).unwrap();
+
+        let meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+            &art_meshes,
+            &keyforms,
+            &deformers,
+            &bindings,
+            &ids,
+            &offscreen,
+        )
+        .unwrap();
+
+        for index in [
+            91, 92, 93, 94, 95, 98, 99, 100, 101, 102, 103, 105, 196, 197,
+        ] {
+            assert_eq!(meshes[index].opacity(), 0.0, "drawable {index}");
+        }
     }
 }

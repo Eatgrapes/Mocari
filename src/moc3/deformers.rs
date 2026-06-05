@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CountInfo, Moc3DrawableMesh, Moc3DrawableVertex,
-    Moc3Header, Moc3SectionOffsets, build_moc3_drawable_mesh,
+    Moc3Header, Moc3Ids, Moc3OffscreenInfo, Moc3SectionOffsets, build_moc3_drawable_mesh,
     parse::{invalid_moc3, read_bool_section, read_f32_section, read_i32_section, to_usize},
 };
 
@@ -196,8 +196,12 @@ impl Moc3KeyformBindings {
         for &binding_index in bindings {
             let binding_index = usize::try_from(binding_index).ok()?;
             let keys = self.binding_keys(binding_index)?;
-            let (left_index, t) =
-                keyform_axis_interval(keys, *self.parameter_default_values.get(binding_index)?)?;
+            let parameter_default = self
+                .parameter_default_values
+                .get(binding_index)
+                .copied()
+                .unwrap_or(0.0);
+            let (left_index, t) = keyform_axis_interval(keys, parameter_default)?;
             axes.push(KeyformAxis {
                 left_index,
                 t,
@@ -672,6 +676,28 @@ pub fn build_moc3_drawable_meshes_for_default_pose(
             bindings,
             art_mesh_index,
         )?);
+    }
+
+    Some(meshes)
+}
+
+pub fn build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    deformers: &Moc3Deformers,
+    bindings: &Moc3KeyformBindings,
+    ids: &Moc3Ids,
+    offscreen: &Moc3OffscreenInfo,
+) -> Option<Vec<Moc3DrawableMesh>> {
+    let mut meshes = build_moc3_drawable_meshes_for_default_pose(
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+    )?;
+
+    for drawable_index in offscreen.effect_source_drawable_indices(ids) {
+        meshes.get_mut(drawable_index)?.set_opacity(0.0);
     }
 
     Some(meshes)

@@ -26,15 +26,18 @@ pub fn mask_wgsl_source() -> &'static str {
 }
 
 pub fn preferred_surface_format(formats: &[wgpu::TextureFormat]) -> Option<wgpu::TextureFormat> {
-    formats
-        .iter()
-        .copied()
-        .find_map(|format| {
-            let unorm = format.remove_srgb_suffix();
-            (unorm != format && formats.contains(&unorm)).then_some(unorm)
-        })
-        .or_else(|| formats.iter().copied().find(|format| !format.is_srgb()))
-        .or_else(|| formats.first().copied())
+    if let Some(format) = formats.iter().copied().find_map(|format| {
+        let unorm = format.remove_srgb_suffix();
+        (unorm != format && formats.contains(&unorm)).then_some(unorm)
+    }) {
+        return Some(format);
+    }
+
+    if let Some(format) = formats.iter().copied().find(|format| !format.is_srgb()) {
+        return Some(format);
+    }
+
+    formats.first().copied()
 }
 
 pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState {

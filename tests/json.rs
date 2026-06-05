@@ -138,7 +138,7 @@ mod expression3 {
     }
 
     #[test]
-    fn expression3_unknown_blend_falls_back_to_add() {
+    fn expression3_unknown_blend_defaults_to_add() {
         let expression = Expression3::from_json_str(
             r#"{
                 "Type": "Live2D Expression",
@@ -341,7 +341,7 @@ mod pose3 {
     }
 
     #[test]
-    fn pose_group_falls_back_to_first_part_when_no_parameter_visible() {
+    fn pose_group_selects_first_part_when_no_parameter_visible() {
         let parameters = [0.0_f32, 0.0];
         let mut opacities = [0.25_f32, 0.5];
 

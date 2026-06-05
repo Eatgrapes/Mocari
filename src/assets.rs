@@ -4,8 +4,8 @@ use crate::{
     json::Model3,
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
-        Moc3KeyformBindings, build_moc3_drawable_meshes,
-        build_moc3_drawable_meshes_for_default_pose,
+        Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
+        build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
     },
 };
 
@@ -111,11 +111,18 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
     let keyforms = Moc3ArtMeshKeyforms::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let deformers = Moc3Deformers::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let bindings = Moc3KeyformBindings::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let ids = Moc3Ids::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let offscreen = Moc3OffscreenInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let meshes =
-        build_moc3_drawable_meshes_for_default_pose(&art_meshes, &keyforms, &deformers, &bindings)
-            .or_else(|| build_moc3_drawable_meshes(&art_meshes, &keyforms))
-            .ok_or(AssetLoadError::DrawableMeshes)?;
+    let meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+        &art_meshes,
+        &keyforms,
+        &deformers,
+        &bindings,
+        &ids,
+        &offscreen,
+    )
+    .ok_or(AssetLoadError::DrawableMeshes)?;
     let textures = model
         .textures()
         .iter()
