@@ -1,15 +1,15 @@
 use crate::{
     Result,
-    core::{
-        KeyformAxis, Vector2, WarpInterpolation, compute_keyform_axis_interval,
-        expand_keyform_runtime_slots, rotation_deformer_transform_point,
-        warp_deformer_transform_target,
-    },
+    core::{KeyformAxis, Vector2, compute_keyform_axis_interval, expand_keyform_runtime_slots},
 };
 
 use super::{
     Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CountInfo, Moc3DrawableMesh, Moc3DrawableVertex,
     Moc3Header, Moc3Ids, Moc3OffscreenInfo, Moc3SectionOffsets, build_moc3_drawable_mesh,
+    compose::{
+        ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp,
+        ROTATION_DERIVATIVE_STEP, apply_composed_parent, parent_scale_accum,
+    },
     parse::{invalid_moc3, read_bool_section, read_f32_section, read_i32_section, to_usize},
 };
 
@@ -82,102 +82,6 @@ struct InterpolatedRotation {
     scale: f32,
     flip_x: bool,
     flip_y: bool,
-}
-
-const ROTATION_DERIVATIVE_STEP: f32 = 0.1;
-
-#[derive(Debug, Clone, PartialEq)]
-enum ComposedDeformer {
-    Warp(ComposedWarp),
-    Rotation(ComposedRotation),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ComposedWarp {
-    grid: Vec<Vector2>,
-    cols: usize,
-    rows: usize,
-    scale_accum: f32,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct ComposedRotation {
-    origin: Vector2,
-    angle_degrees: f32,
-    scale: f32,
-    flip_x: bool,
-    flip_y: bool,
-    scale_accum: f32,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ComposedDeformers {
-    deformers: Vec<ComposedDeformer>,
-}
-
-impl ComposedDeformers {
-    fn transform_vertices(
-        &self,
-        parent_deformer_index: i32,
-        vertices: &mut [Vector2],
-    ) -> Option<()> {
-        if parent_deformer_index < 0 {
-            return Some(());
-        }
-        let index = usize::try_from(parent_deformer_index).ok()?;
-        for vertex in vertices {
-            *vertex = apply_one(self.deformers.get(index)?, *vertex)?;
-        }
-        Some(())
-    }
-}
-
-fn apply_one(deformer: &ComposedDeformer, point: Vector2) -> Option<Vector2> {
-    match deformer {
-        ComposedDeformer::Warp(warp) => warp_deformer_transform_target(
-            point,
-            &warp.grid,
-            warp.cols,
-            warp.rows,
-            WarpInterpolation::Quad,
-        ),
-        ComposedDeformer::Rotation(rotation) => Some(rotation_deformer_transform_point(
-            point,
-            rotation.angle_degrees,
-            rotation.scale,
-            rotation.origin,
-            rotation.flip_x,
-            rotation.flip_y,
-        )),
-    }
-}
-
-fn apply_composed_parent(
-    composed: &[Option<ComposedDeformer>],
-    parent_index: i32,
-    point: Vector2,
-) -> Option<Vector2> {
-    if parent_index < 0 {
-        return Some(point);
-    }
-    let index = usize::try_from(parent_index).ok()?;
-    let parent = composed.get(index)?.as_ref()?;
-    apply_one(parent, point)
-}
-
-fn parent_scale_accum(composed: &[Option<ComposedDeformer>], parent_index: i32) -> f32 {
-    if parent_index < 0 {
-        return 1.0;
-    }
-    let index = match usize::try_from(parent_index) {
-        Ok(value) => value,
-        Err(_) => return 1.0,
-    };
-    match composed.get(index).and_then(|slot| slot.as_ref()) {
-        Some(ComposedDeformer::Warp(warp)) => warp.scale_accum,
-        Some(ComposedDeformer::Rotation(rotation)) => rotation.scale_accum,
-        None => 1.0,
-    }
 }
 
 impl Moc3KeyformBindings {
@@ -516,7 +420,7 @@ impl Moc3Deformers {
         })
     }
 
-    fn compose(&self, bindings: &Moc3KeyformBindings) -> Option<ComposedDeformers> {
+    pub(super) fn compose(&self, bindings: &Moc3KeyformBindings) -> Option<ComposedDeformers> {
         let count = self.deformer_kinds.len();
         let mut order: Vec<usize> = (0..count).collect();
         order.sort_by_key(|&idx| self.deformer_depth(idx));
@@ -567,9 +471,9 @@ impl Moc3Deformers {
             *composed.get_mut(idx)? = Some(composed_deformer);
         }
 
-        Some(ComposedDeformers {
-            deformers: composed.into_iter().collect::<Option<Vec<_>>>()?,
-        })
+        Some(ComposedDeformers::new(
+            composed.into_iter().collect::<Option<Vec<_>>>()?,
+        ))
     }
 
     fn deformer_depth(&self, index: usize) -> usize {

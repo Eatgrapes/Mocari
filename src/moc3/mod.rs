@@ -1,5 +1,6 @@
 mod art_meshes;
 mod canvas;
+mod compose;
 mod counts;
 mod deformers;
 mod drawable;
