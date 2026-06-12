@@ -1,7 +1,8 @@
 use crate::{
     Result,
     core::{
-        Vector2, WarpInterpolation, rotation_deformer_transform_point,
+        KeyformAxis, Vector2, WarpInterpolation, compute_keyform_axis_interval,
+        expand_keyform_runtime_slots, rotation_deformer_transform_point,
         warp_deformer_transform_target,
     },
 };
@@ -72,14 +73,6 @@ pub struct Moc3KeyformBindings {
 struct Moc3KeyformSlot {
     local_index: usize,
     weight: f32,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct KeyformAxis {
-    left_index: usize,
-    t: f32,
-    stride: usize,
-    key_count: usize,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -291,17 +284,29 @@ impl Moc3KeyformBindings {
                 .get(binding_index)
                 .copied()
                 .unwrap_or(0.0);
-            let (left_index, t) = keyform_axis_interval(keys, parameter_default)?;
-            axes.push(KeyformAxis {
-                left_index,
-                t,
+            let interval = compute_keyform_axis_interval(keys, parameter_default)?;
+            let active_index = interval.left_index() + usize::from(interval.t() != 0.0);
+            if active_index >= keys.len() {
+                return None;
+            }
+            axes.push(KeyformAxis::new(
+                interval.left_index(),
+                interval.t(),
                 stride,
-                key_count: keys.len(),
-            });
+            ));
             stride = stride.checked_mul(keys.len())?;
         }
 
-        expand_keyform_slots(&axes, keyform_count)
+        let slots = expand_keyform_runtime_slots(&axes)
+            .into_iter()
+            .map(|slot| {
+                (slot.flat_index() < keyform_count).then_some(Moc3KeyformSlot {
+                    local_index: slot.flat_index(),
+                    weight: slot.weight(),
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(slots)
     }
 
     fn band_keyform_bindings(&self, band_index: i32) -> Option<&[i32]> {
@@ -852,87 +857,6 @@ fn interpolate_art_mesh_scalar(
         out += value(*keyforms.get(slot.local_index)?) * slot.weight;
     }
     Some(out)
-}
-
-fn keyform_axis_interval(keys: &[f32], value: f32) -> Option<(usize, f32)> {
-    if keys.is_empty() {
-        return None;
-    }
-
-    if value <= keys[0] {
-        return Some((0, 0.0));
-    }
-
-    let last_index = keys.len() - 1;
-    if value >= keys[last_index] {
-        return Some((last_index, 0.0));
-    }
-
-    for index in 0..keys.len().saturating_sub(1) {
-        if keys[index] <= value && value <= keys[index + 1] {
-            let width = keys[index + 1] - keys[index];
-            if width.abs() <= f32::EPSILON {
-                return Some((index, 0.0));
-            }
-            return Some((index, (value - keys[index]) / width));
-        }
-    }
-
-    Some((last_index, 0.0))
-}
-
-fn expand_keyform_slots(
-    axes: &[KeyformAxis],
-    keyform_count: usize,
-) -> Option<Vec<Moc3KeyformSlot>> {
-    let active_count = axes.iter().filter(|axis| axis.t != 0.0).count();
-    let slot_count = 1usize.checked_shl(u32::try_from(active_count).ok()?)?;
-    let mut slots = Vec::with_capacity(slot_count);
-
-    for mask in 0..slot_count {
-        let mut local_index = 0usize;
-        let mut weight = 1.0f32;
-        let mut bit = 0usize;
-
-        for axis in axes {
-            let use_right = if axis.t == 0.0 {
-                false
-            } else {
-                let use_right = ((mask >> bit) & 1) != 0;
-                bit += 1;
-                use_right
-            };
-
-            let axis_index = if use_right {
-                axis.left_index.checked_add(1)?
-            } else {
-                axis.left_index
-            };
-            if axis_index >= axis.key_count {
-                return None;
-            }
-
-            local_index = local_index.checked_add(axis_index.checked_mul(axis.stride)?)?;
-            weight *= if axis.t == 0.0 {
-                1.0
-            } else if use_right {
-                axis.t
-            } else {
-                1.0 - axis.t
-            };
-        }
-
-        if local_index >= keyform_count {
-            return None;
-        }
-
-        slots.push(Moc3KeyformSlot {
-            local_index,
-            weight,
-        });
-    }
-
-    Some(slots)
 }
 
 fn interpolate_bool(value: f32) -> bool {
