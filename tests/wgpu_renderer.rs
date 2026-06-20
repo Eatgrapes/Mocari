@@ -200,13 +200,13 @@ fn exposes_live2d_premultiplied_blend_states() {
 }
 
 #[test]
-fn exposes_inverse_mask_blend_state() {
+fn mask_blend_state_accumulates_coverage() {
     let blend = wgpu_mask_blend_state();
 
-    assert_eq!(blend.color.src_factor, wgpu::BlendFactor::Zero);
-    assert_eq!(blend.color.dst_factor, wgpu::BlendFactor::OneMinusSrc);
-    assert_eq!(blend.alpha.src_factor, wgpu::BlendFactor::Zero);
-    assert_eq!(blend.alpha.dst_factor, wgpu::BlendFactor::OneMinusSrcAlpha);
+    assert_eq!(blend.color.src_factor, wgpu::BlendFactor::One);
+    assert_eq!(blend.color.dst_factor, wgpu::BlendFactor::One);
+    assert_eq!(blend.alpha.src_factor, wgpu::BlendFactor::One);
+    assert_eq!(blend.alpha.dst_factor, wgpu::BlendFactor::One);
 }
 
 #[test]

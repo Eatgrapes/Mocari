@@ -84,13 +84,13 @@ pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState
 pub fn wgpu_mask_blend_state() -> wgpu::BlendState {
     wgpu::BlendState {
         color: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::Zero,
-            dst_factor: wgpu::BlendFactor::OneMinusSrc,
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
             operation: wgpu::BlendOperation::Add,
         },
         alpha: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::Zero,
-            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
             operation: wgpu::BlendOperation::Add,
         },
     }
