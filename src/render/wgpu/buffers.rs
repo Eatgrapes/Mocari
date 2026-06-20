@@ -1,5 +1,6 @@
 use wgpu::util::DeviceExt;
 
+use crate::core::draw_order_from_raw;
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
 
 use super::clipping::WgpuClippingRect;
@@ -144,9 +145,8 @@ impl WgpuMeshBuffers {
     pub fn draw_order_indices(&self) -> Vec<usize> {
         let mut indices = (0..self.drawables.len()).collect::<Vec<_>>();
         indices.sort_by(|left, right| {
-            self.drawables[*left]
-                .draw_order
-                .total_cmp(&self.drawables[*right].draw_order)
+            draw_order_from_raw(self.drawables[*left].draw_order)
+                .cmp(&draw_order_from_raw(self.drawables[*right].draw_order))
                 .then_with(|| {
                     self.drawables[*left]
                         .render_order

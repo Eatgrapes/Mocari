@@ -583,6 +583,30 @@ fn mesh_buffers_use_render_order_rank_to_break_draw_order_ties() {
     assert_eq!(buffers.draw_order_indices(), vec![2, 1, 0]);
 }
 
+// Regression for layer flicker during motion: draw order is quantized to an
+// integer (like Cubism) before sorting, so sub-integer jitter from per-frame
+// keyform interpolation can never swap two drawables that share an integer draw
+// order. The 499.9998 / 500.0001 pair must order exactly like a 500.0 / 500.0
+// pair, decided only by the stable render-order rank.
+#[test]
+fn mesh_buffers_quantize_draw_order_to_avoid_flicker() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let jittered = [
+        test_mesh_with_render_order(0, 499.9998, 70),
+        test_mesh_with_render_order(1, 500.0001, 49),
+    ];
+    let exact = [
+        test_mesh_with_render_order(0, 500.0, 70),
+        test_mesh_with_render_order(1, 500.0, 49),
+    ];
+
+    let jittered = WgpuMeshBuffers::from_drawables(&device, &jittered).unwrap();
+    let exact = WgpuMeshBuffers::from_drawables(&device, &exact).unwrap();
+
+    assert_eq!(jittered.draw_order_indices(), vec![1, 0]);
+    assert_eq!(jittered.draw_order_indices(), exact.draw_order_indices());
+}
+
 #[test]
 fn draw_returns_error_for_missing_texture_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());

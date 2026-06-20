@@ -146,12 +146,6 @@ fn hiyori_mesh_snapshot(model: &rusty_live2d::assets::RuntimeModel) -> Vec<Vec<[
         .collect()
 }
 
-// Regression for the "two arms" / mixed-motion-limb bug: keyform bindings were
-// indexed by their binding id instead of the parameter they are bound to. Hiyori
-// has 70 parameters but 72 parameter bindings (two parameters each own a second
-// binding), so past that point binding id != parameter id; the exact map is
-// asserted in moc3::keyform_bindings unit tests. Here we check the user-visible
-// effect: distinct parameters drive distinct, non-empty deformations.
 #[test]
 fn hiyori_distinct_bindings_drive_distinct_parameters() {
     let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
@@ -174,9 +168,6 @@ fn hiyori_distinct_bindings_drive_distinct_parameters() {
     );
 }
 
-// Regression for ghost limbs: a part with opacity 0 must hide every drawable in
-// its subtree. We pick any part that owns drawables and verify zeroing it drives
-// at least one mesh to zero opacity while leaving others visible.
 #[test]
 fn zeroing_a_part_hides_its_drawables() {
     let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
@@ -209,10 +200,6 @@ fn zeroing_a_part_hides_its_drawables() {
     assert!(hid_some, "no part hid any drawable");
 }
 
-// Regression for the "four arms at rest" bug: pose3.json defines PartArmA vs
-// PartArmB as a mutually-exclusive group, so at the default pose only the first
-// arm is visible. Without pose handling every arm drawable renders at opacity
-// 1.0; applying the pose drives the redundant arm's drawables to zero.
 #[test]
 fn default_pose_hides_redundant_arm_via_pose_groups() {
     let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
