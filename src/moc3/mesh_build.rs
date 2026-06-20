@@ -138,6 +138,14 @@ fn build_moc3_drawable_mesh_for_pose(
     )?;
     let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?;
     let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;
+    let multiply_color =
+        interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
+            k.multiply_color()
+        })?;
+    let screen_color =
+        interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
+            k.screen_color()
+        })?;
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
 
     composed.transform_vertices(
@@ -154,7 +162,7 @@ fn build_moc3_drawable_mesh_for_pose(
         })
         .collect();
 
-    Some(Moc3DrawableMesh::from_parts_with_render_order(
+    let mut mesh = Moc3DrawableMesh::from_parts_with_render_order(
         mesh.texture_index(),
         mesh.drawable_flags(),
         opacity,
@@ -163,7 +171,27 @@ fn build_moc3_drawable_mesh_for_pose(
         vertices,
         mesh.indices().to_vec(),
         mesh.masks().to_vec(),
-    ))
+    );
+    mesh.set_multiply_color(multiply_color);
+    mesh.set_screen_color(screen_color);
+    Some(mesh)
+}
+
+fn interpolate_art_mesh_color(
+    keyforms: &Moc3ArtMeshKeyforms,
+    art_mesh_index: usize,
+    slots: &[Moc3KeyformSlot],
+    channels: impl Fn(Moc3ArtMeshKeyformInfo) -> [f32; 3],
+) -> Option<[f32; 3]> {
+    let keyforms = keyforms.art_mesh_keyforms(art_mesh_index)?;
+    let mut color = [0.0f32; 3];
+    for slot in slots {
+        let value = channels(*keyforms.get(slot.local_index)?);
+        for (acc, channel) in color.iter_mut().zip(value) {
+            *acc += channel * slot.weight;
+        }
+    }
+    Some(color)
 }
 
 fn interpolate_art_mesh_positions(

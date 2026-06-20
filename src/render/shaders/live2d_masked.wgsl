@@ -2,6 +2,8 @@ struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) opacity: f32,
+    @location(3) multiply: vec3<f32>,
+    @location(4) screen: vec3<f32>,
 };
 
 struct VertexOutput {
@@ -9,6 +11,8 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) opacity: f32,
     @location(2) clip_position: vec4<f32>,
+    @location(3) multiply: vec3<f32>,
+    @location(4) screen: vec3<f32>,
 };
 
 struct ClipParams {
@@ -44,14 +48,18 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.uv = input.uv;
     output.opacity = input.opacity;
     output.clip_position = clip_params.clip_matrix * position;
+    output.multiply = input.multiply;
+    output.screen = input.screen;
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let sample = textureSample(live2d_texture, live2d_sampler, input.uv);
+    var rgb = sample.rgb * input.multiply;
+    rgb = rgb + input.screen - rgb * input.screen;
     let alpha = sample.a * input.opacity;
-    let color = vec4<f32>(sample.rgb * alpha, alpha);
+    let color = vec4<f32>(rgb * alpha, alpha);
     let mask_uv = input.clip_position.xy / input.clip_position.w;
     let mask_sample = textureSample(live2d_mask_texture, live2d_mask_sampler, mask_uv);
     let masked = dot(mask_sample, clip_params.channel_flag);

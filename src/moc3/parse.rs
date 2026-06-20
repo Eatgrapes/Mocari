@@ -74,6 +74,20 @@ pub(super) fn read_f32_section(
     })
 }
 
+pub(super) fn read_f32_section_or_default(
+    bytes: &[u8],
+    offsets: &Moc3SectionOffsets,
+    slot: usize,
+    count: usize,
+    endianness: Endianness,
+    default: f32,
+) -> Result<Vec<f32>> {
+    match offsets.section_offset(slot) {
+        Some(0) | None => Ok(vec![default; count]),
+        Some(_) => read_f32_section(bytes, offsets, slot, count, endianness),
+    }
+}
+
 pub(super) fn read_u8_section(
     bytes: &[u8],
     offsets: &Moc3SectionOffsets,

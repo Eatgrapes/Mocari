@@ -201,6 +201,36 @@ fn zeroing_a_part_hides_its_drawables() {
 }
 
 #[test]
+fn mao_drawables_carry_non_identity_multiply_and_screen_colors() {
+    // Mao (moc3 v5) ships per-drawable multiply/screen color keyforms; at rest some
+    // effect meshes resolve to a non-identity color that hides or tints them.
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    let non_identity = model
+        .runtime()
+        .meshes()
+        .iter()
+        .filter(|mesh| {
+            mesh.multiply_color() != [1.0, 1.0, 1.0] || mesh.screen_color() != [0.0, 0.0, 0.0]
+        })
+        .count();
+    assert!(
+        non_identity > 0,
+        "Mao should expose per-drawable color keyforms"
+    );
+}
+
+#[test]
+fn legacy_model_without_color_keyforms_defaults_to_identity() {
+    // Haru is moc3 v1 and has no color keyform sections; every drawable must fall
+    // back to the identity multiply (1,1,1) and screen (0,0,0).
+    let model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    for mesh in model.runtime().meshes() {
+        assert_eq!(mesh.multiply_color(), [1.0, 1.0, 1.0]);
+        assert_eq!(mesh.screen_color(), [0.0, 0.0, 0.0]);
+    }
+}
+
+#[test]
 fn default_pose_hides_redundant_arm_via_pose_groups() {
     let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
     let hidden = model

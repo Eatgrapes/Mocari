@@ -37,10 +37,13 @@ fn encodes_wgpu_vertices_and_indices() {
             WgpuDrawableVertex::new([3.0, 4.0], [0.75, 1.0], 0.75),
         ]
     );
-    assert_eq!(vertex_bytes.len(), 40);
+    assert_eq!(vertex_bytes.len(), 88);
     assert_eq!(&vertex_bytes[0..4], &1.0f32.to_ne_bytes());
     assert_eq!(&vertex_bytes[12..16], &0.5f32.to_ne_bytes());
     assert_eq!(&vertex_bytes[16..20], &0.75f32.to_ne_bytes());
+    // multiply defaults to (1,1,1) at offset 20, screen to (0,0,0) at offset 32
+    assert_eq!(&vertex_bytes[20..24], &1.0f32.to_ne_bytes());
+    assert_eq!(&vertex_bytes[32..36], &0.0f32.to_ne_bytes());
     assert_eq!(index_bytes, vec![0, 0, 1, 0]);
 }
 
@@ -53,11 +56,14 @@ fn live2d_wgsl_samples_texture_and_applies_opacity() {
     assert!(source.contains("@location(0) position: vec2<f32>"));
     assert!(source.contains("@location(1) uv: vec2<f32>"));
     assert!(source.contains("@location(2) opacity: f32"));
+    assert!(source.contains("@location(3) multiply: vec3<f32>"));
+    assert!(source.contains("@location(4) screen: vec3<f32>"));
     assert!(source.contains("@group(1) @binding(0)"));
     assert!(source.contains("live2d_transform * vec4<f32>(input.position, 0.0, 1.0)"));
     assert!(source.contains("textureSample"));
     assert!(source.contains("let alpha = sample.a * input.opacity"));
-    assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
+    assert!(source.contains("rgb = rgb + input.screen - rgb * input.screen"));
+    assert!(source.contains("vec4<f32>(rgb * alpha, alpha)"));
 }
 
 #[test]
@@ -85,7 +91,8 @@ fn live2d_masked_wgsl_samples_inverse_mask_channel() {
     assert!(source.contains("clip_matrix: mat4x4<f32>"));
     assert!(source.contains("channel_flag: vec4<f32>"));
     assert!(source.contains("clip_params.clip_matrix * position"));
-    assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
+    assert!(source.contains("rgb = rgb + input.screen - rgb * input.screen"));
+    assert!(source.contains("vec4<f32>(rgb * alpha, alpha)"));
     assert!(source.contains("dot(mask_sample, clip_params.channel_flag)"));
     assert!(source.contains("select(masked, 1.0 - masked, clip_params.inverted.x > 0.5)"));
 }

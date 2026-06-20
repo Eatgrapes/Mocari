@@ -10,16 +10,30 @@ pub struct WgpuDrawableVertex {
     position: [f32; 2],
     uv: [f32; 2],
     opacity: f32,
+    multiply: [f32; 3],
+    screen: [f32; 3],
 }
 
 impl WgpuDrawableVertex {
-    pub const STRIDE: wgpu::BufferAddress = 20;
+    pub const STRIDE: wgpu::BufferAddress = 44;
 
     pub fn new(position: [f32; 2], uv: [f32; 2], opacity: f32) -> Self {
+        Self::with_colors(position, uv, opacity, [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
+    }
+
+    pub fn with_colors(
+        position: [f32; 2],
+        uv: [f32; 2],
+        opacity: f32,
+        multiply: [f32; 3],
+        screen: [f32; 3],
+    ) -> Self {
         Self {
             position,
             uv,
             opacity,
+            multiply,
+            screen,
         }
     }
 
@@ -35,8 +49,16 @@ impl WgpuDrawableVertex {
         self.opacity
     }
 
+    pub fn multiply(&self) -> [f32; 3] {
+        self.multiply
+    }
+
+    pub fn screen(&self) -> [f32; 3] {
+        self.screen
+    }
+
     pub fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
+        const ATTRIBUTES: [wgpu::VertexAttribute; 5] = [
             wgpu::VertexAttribute {
                 format: wgpu::VertexFormat::Float32x2,
                 offset: 0,
@@ -51,6 +73,16 @@ impl WgpuDrawableVertex {
                 format: wgpu::VertexFormat::Float32,
                 offset: 16,
                 shader_location: 2,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 20,
+                shader_location: 3,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 32,
+                shader_location: 4,
             },
         ];
 
@@ -166,15 +198,24 @@ impl WgpuMeshBuffers {
 pub fn wgpu_vertices_from_drawable(mesh: &Moc3DrawableMesh) -> Vec<WgpuDrawableVertex> {
     mesh.vertices()
         .iter()
-        .map(|vertex| wgpu_vertex_from_drawable_vertex(vertex, mesh.opacity()))
+        .map(|vertex| {
+            wgpu_vertex_from_drawable_vertex(
+                vertex,
+                mesh.opacity(),
+                mesh.multiply_color(),
+                mesh.screen_color(),
+            )
+        })
         .collect()
 }
 
 pub fn wgpu_vertex_from_drawable_vertex(
     vertex: &Moc3DrawableVertex,
     opacity: f32,
+    multiply: [f32; 3],
+    screen: [f32; 3],
 ) -> WgpuDrawableVertex {
-    WgpuDrawableVertex::new(vertex.position(), vertex.uv(), opacity)
+    WgpuDrawableVertex::with_colors(vertex.position(), vertex.uv(), opacity, multiply, screen)
 }
 
 pub fn encode_wgpu_vertices(vertices: &[WgpuDrawableVertex]) -> Vec<u8> {
@@ -185,6 +226,12 @@ pub fn encode_wgpu_vertices(vertices: &[WgpuDrawableVertex]) -> Vec<u8> {
         bytes.extend_from_slice(&vertex.uv[0].to_ne_bytes());
         bytes.extend_from_slice(&vertex.uv[1].to_ne_bytes());
         bytes.extend_from_slice(&vertex.opacity.to_ne_bytes());
+        for channel in vertex.multiply {
+            bytes.extend_from_slice(&channel.to_ne_bytes());
+        }
+        for channel in vertex.screen {
+            bytes.extend_from_slice(&channel.to_ne_bytes());
+        }
     }
 
     bytes

@@ -2,7 +2,7 @@ use crate::Result;
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
-    parse::{invalid_moc3, read_f32_section, read_i32_section, to_usize},
+    parse::{invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section, to_usize},
 };
 
 const KEYFORM_BEGIN_INDICES_SLOT: usize = 35;
@@ -12,20 +12,42 @@ const ART_MESH_KEYFORM_OPACITIES_SLOT: usize = 68;
 const ART_MESH_KEYFORM_DRAW_ORDERS_SLOT: usize = 69;
 const KEYFORM_POSITION_BEGIN_INDICES_SLOT: usize = 70;
 const KEYFORM_POSITION_XYS_SLOT: usize = 71;
+const KEYFORM_MULTIPLY_COLOR_SLOTS: [usize; 3] = [108, 109, 110];
+const KEYFORM_SCREEN_COLOR_SLOTS: [usize; 3] = [111, 112, 113];
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Moc3ArtMeshKeyformInfo {
     opacity: f32,
     draw_order: f32,
     position_begin_index: i32,
+    multiply_color: [f32; 3],
+    screen_color: [f32; 3],
 }
 
 impl Moc3ArtMeshKeyformInfo {
     pub fn new(opacity: f32, draw_order: f32, position_begin_index: i32) -> Self {
+        Self::with_colors(
+            opacity,
+            draw_order,
+            position_begin_index,
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+        )
+    }
+
+    pub fn with_colors(
+        opacity: f32,
+        draw_order: f32,
+        position_begin_index: i32,
+        multiply_color: [f32; 3],
+        screen_color: [f32; 3],
+    ) -> Self {
         Self {
             opacity,
             draw_order,
             position_begin_index,
+            multiply_color,
+            screen_color,
         }
     }
 
@@ -39,6 +61,14 @@ impl Moc3ArtMeshKeyformInfo {
 
     pub fn position_begin_index(&self) -> i32 {
         self.position_begin_index
+    }
+
+    pub fn multiply_color(&self) -> [f32; 3] {
+        self.multiply_color
+    }
+
+    pub fn screen_color(&self) -> [f32; 3] {
+        self.screen_color
     }
 }
 
@@ -144,13 +174,50 @@ impl Moc3ArtMeshKeyforms {
             to_usize(counts.keyform_positions(), "keyform position count")?,
             header.endianness(),
         )?;
+        let read_color_channels = |slots: [usize; 3], default: f32| -> Result<[Vec<f32>; 3]> {
+            Ok([
+                read_f32_section_or_default(
+                    bytes,
+                    &offsets,
+                    slots[0],
+                    art_mesh_keyform_count,
+                    header.endianness(),
+                    default,
+                )?,
+                read_f32_section_or_default(
+                    bytes,
+                    &offsets,
+                    slots[1],
+                    art_mesh_keyform_count,
+                    header.endianness(),
+                    default,
+                )?,
+                read_f32_section_or_default(
+                    bytes,
+                    &offsets,
+                    slots[2],
+                    art_mesh_keyform_count,
+                    header.endianness(),
+                    default,
+                )?,
+            ])
+        };
+        let multiply_colors = read_color_channels(KEYFORM_MULTIPLY_COLOR_SLOTS, 1.0)?;
+        let screen_colors = read_color_channels(KEYFORM_SCREEN_COLOR_SLOTS, 0.0)?;
 
-        let keyforms = opacities
-            .iter()
-            .zip(draw_orders.iter())
-            .zip(position_begin_indices.iter())
-            .map(|((opacity, draw_order), position_begin_index)| {
-                Moc3ArtMeshKeyformInfo::new(*opacity, *draw_order, *position_begin_index)
+        let keyforms = (0..art_mesh_keyform_count)
+            .map(|i| {
+                Moc3ArtMeshKeyformInfo::with_colors(
+                    opacities[i],
+                    draw_orders[i],
+                    position_begin_indices[i],
+                    [
+                        multiply_colors[0][i],
+                        multiply_colors[1][i],
+                        multiply_colors[2][i],
+                    ],
+                    [screen_colors[0][i], screen_colors[1][i], screen_colors[2][i]],
+                )
             })
             .collect::<Vec<_>>();
 

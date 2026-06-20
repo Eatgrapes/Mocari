@@ -33,6 +33,8 @@ pub struct Moc3DrawableMesh {
     opacity: f32,
     draw_order: f32,
     render_order: i32,
+    multiply_color: [f32; 3],
+    screen_color: [f32; 3],
     vertices: Vec<Moc3DrawableVertex>,
     indices: Vec<u16>,
     masks: Vec<i32>,
@@ -96,6 +98,8 @@ impl Moc3DrawableMesh {
             opacity,
             draw_order,
             render_order,
+            multiply_color: [1.0, 1.0, 1.0],
+            screen_color: [0.0, 0.0, 0.0],
             vertices,
             indices,
             masks,
@@ -104,6 +108,22 @@ impl Moc3DrawableMesh {
 
     pub fn texture_index(&self) -> i32 {
         self.texture_index
+    }
+
+    pub fn multiply_color(&self) -> [f32; 3] {
+        self.multiply_color
+    }
+
+    pub fn screen_color(&self) -> [f32; 3] {
+        self.screen_color
+    }
+
+    pub(crate) fn set_multiply_color(&mut self, color: [f32; 3]) {
+        self.multiply_color = color;
+    }
+
+    pub(crate) fn set_screen_color(&mut self, color: [f32; 3]) {
+        self.screen_color = color;
     }
 
     pub fn drawable_flags(&self) -> u8 {
