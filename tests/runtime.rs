@@ -70,8 +70,7 @@ fn set_parameter_clamps_to_model_range() {
 fn motion_player_drives_a_parameter_over_time() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let motion =
-        mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json")
-            .unwrap();
+        mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
 
     let target = motion
         .curves()
@@ -154,7 +153,10 @@ fn hiyori_distinct_bindings_drive_distinct_parameters() {
     model.runtime_mut().set_parameter("ParamRibbon", 1.0);
     model.runtime_mut().update_meshes().unwrap();
     let ribbon = hiyori_mesh_snapshot(&model);
-    assert_ne!(baseline, ribbon, "ParamRibbon should deform the Hiyori mesh");
+    assert_ne!(
+        baseline, ribbon,
+        "ParamRibbon should deform the Hiyori mesh"
+    );
 
     model.runtime_mut().reset_parameters();
     model.runtime_mut().set_parameter("ParamSkirt2", 1.0);
@@ -255,6 +257,9 @@ fn default_pose_hides_redundant_arm_via_pose_groups() {
         .filter(|mesh| mesh.opacity() > 0.0)
         .count();
 
-    assert!(hidden > 0, "pose group should hide the redundant arm at rest");
+    assert!(
+        hidden > 0,
+        "pose group should hide the redundant arm at rest"
+    );
     assert!(visible > 0, "the selected arm and body must stay visible");
 }

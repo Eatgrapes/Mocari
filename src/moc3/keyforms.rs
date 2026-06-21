@@ -2,7 +2,9 @@ use crate::Result;
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
-    parse::{invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section, to_usize},
+    parse::{
+        invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section, to_usize,
+    },
 };
 
 const KEYFORM_BEGIN_INDICES_SLOT: usize = 35;
@@ -216,7 +218,11 @@ impl Moc3ArtMeshKeyforms {
                         multiply_colors[1][i],
                         multiply_colors[2][i],
                     ],
-                    [screen_colors[0][i], screen_colors[1][i], screen_colors[2][i]],
+                    [
+                        screen_colors[0][i],
+                        screen_colors[1][i],
+                        screen_colors[2][i],
+                    ],
                 )
             })
             .collect::<Vec<_>>();

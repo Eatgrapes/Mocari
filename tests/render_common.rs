@@ -109,12 +109,18 @@ fn assigns_single_texture_clipping_layouts_by_channel_and_cell() {
 
     plan.assign_single_texture_layouts().unwrap();
 
-    assert_eq!(plan.contexts()[0].layout().unwrap().channel(), MaskChannel::Red);
+    assert_eq!(
+        plan.contexts()[0].layout().unwrap().channel(),
+        MaskChannel::Red
+    );
     assert_eq!(
         plan.contexts()[0].layout().unwrap().bounds(),
         ClippingRect::new(0.0, 0.0, 0.5, 1.0)
     );
-    assert_eq!(plan.contexts()[1].layout().unwrap().channel(), MaskChannel::Red);
+    assert_eq!(
+        plan.contexts()[1].layout().unwrap().channel(),
+        MaskChannel::Red
+    );
     assert_eq!(
         plan.contexts()[1].layout().unwrap().bounds(),
         ClippingRect::new(0.5, 0.0, 0.5, 1.0)

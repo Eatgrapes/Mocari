@@ -1,18 +1,12 @@
-use std::{
-    error::Error,
-    fmt,
-    path::PathBuf,
-    sync::Arc,
-    time::Instant,
-};
+use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
     ModelRuntime, MotionPlayer,
     assets::{DecodedTexture, load_model_runtime},
     core::Matrix44,
-    motion::load_motion,
     moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
+    motion::load_motion,
     render::wgpu::{
         WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
         WgpuMeshBuffers, WgpuTexture, WgpuTransform, preferred_surface_format,
@@ -262,10 +256,24 @@ impl WindowState {
         let switch_transform = renderer.create_transform(&device, &Matrix44::identity());
         let motion_transform =
             renderer.create_transform(&device, &button_offset_matrix(size, MOTION_BUTTON_Y));
-        let switch_label =
-            create_label_quad(&renderer, &device, &queue, &font, "Switch Model", size, SWITCH_BUTTON_Y)?;
-        let motion_label =
-            create_label_quad(&renderer, &device, &queue, &font, "Play Motion", size, MOTION_BUTTON_Y)?;
+        let switch_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Switch Model",
+            size,
+            SWITCH_BUTTON_Y,
+        )?;
+        let motion_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Play Motion",
+            size,
+            MOTION_BUTTON_Y,
+        )?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
@@ -370,11 +378,7 @@ impl WindowState {
         if self.model.runtime.update_meshes().is_none() {
             return Err(Box::new(ExampleError("failed to rebuild model meshes")));
         }
-        rebuild_model_gpu(
-            &self.renderer,
-            &self.device,
-            &mut self.model,
-        )?;
+        rebuild_model_gpu(&self.renderer, &self.device, &mut self.model)?;
         Ok(())
     }
 
@@ -548,11 +552,13 @@ fn load_rendered_model(
         mesh_buffers: WgpuMeshBuffers::from_drawables(device, &[])
             .ok_or(ExampleError("failed to create mesh buffers"))?,
         textures,
-        clipping_resources: renderer
-            .create_clipping_resources(device, &WgpuClippingPlan::from_mesh_buffers(
+        clipping_resources: renderer.create_clipping_resources(
+            device,
+            &WgpuClippingPlan::from_mesh_buffers(
                 &WgpuMeshBuffers::from_drawables(device, &[])
                     .ok_or(ExampleError("failed to create mesh buffers"))?,
-            ))?,
+            ),
+        )?,
         mask_target: renderer.create_mask_render_target(device, MASK_TEXTURE_SIZE)?,
         transform: renderer.create_transform(device, &fit_model_matrix(model_bounds, surface_size)),
         model_bounds,
@@ -597,10 +603,10 @@ fn load_font() -> Result<FontArc, Box<dyn Error>> {
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ];
     for path in CANDIDATES {
-        if let Ok(bytes) = std::fs::read(path) {
-            if let Ok(font) = FontArc::try_from_vec(bytes) {
-                return Ok(font);
-            }
+        if let Ok(bytes) = std::fs::read(path)
+            && let Ok(font) = FontArc::try_from_vec(bytes)
+        {
+            return Ok(font);
         }
     }
     Err(Box::new(ExampleError("no usable system font found")))

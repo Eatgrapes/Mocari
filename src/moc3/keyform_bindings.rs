@@ -286,7 +286,10 @@ mod tests {
         // 70 parameters, 72 bindings: parameters 30 and 31 each own two bindings,
         // so the map diverges from the identity after binding 30.
         assert_eq!(bindings.binding_parameter_indices.len(), 72);
-        assert_eq!(&bindings.binding_parameter_indices[30..36], &[30, 30, 31, 31, 32, 33]);
+        assert_eq!(
+            &bindings.binding_parameter_indices[30..36],
+            &[30, 30, 31, 31, 32, 33]
+        );
         // Bindings past the parameter count resolve to real parameters.
         assert_eq!(bindings.binding_parameter_indices[70], 68);
         assert_eq!(bindings.binding_parameter_indices[71], 69);

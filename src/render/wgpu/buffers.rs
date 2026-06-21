@@ -2,8 +2,8 @@ use wgpu::util::DeviceExt;
 
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh};
 use crate::render::common::{
-    ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices, encode_indices, encode_vertices,
-    vertices_from_drawable,
+    ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices, encode_indices,
+    encode_vertices, vertices_from_drawable,
 };
 
 pub fn drawable_vertex_layout() -> wgpu::VertexBufferLayout<'static> {

@@ -186,7 +186,9 @@ impl ModelRuntime {
     }
 
     pub fn reset_part_opacities(&mut self) {
-        self.part_opacity_overrides.iter_mut().for_each(|o| *o = None);
+        self.part_opacity_overrides
+            .iter_mut()
+            .for_each(|o| *o = None);
     }
 
     pub fn apply_pose(&mut self, delta_seconds: f32) {
@@ -202,8 +204,13 @@ impl ModelRuntime {
                 .map(|&part| self.pose_opacities[part])
                 .collect();
 
-            if update_pose_group_opacities(&selection, &mut faded, delta_seconds, self.pose_fade_time)
-                .is_none()
+            if update_pose_group_opacities(
+                &selection,
+                &mut faded,
+                delta_seconds,
+                self.pose_fade_time,
+            )
+            .is_none()
             {
                 continue;
             }

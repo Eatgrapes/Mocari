@@ -8,7 +8,9 @@ use crate::render::common::{
 use super::{
     WgpuLive2dRenderer,
     buffers::drawable_vertex_layout,
-    clipping::{WgpuClippingPlan, WgpuClippingResources, WgpuMaskRenderTarget, WgpuPreparedClippingContext},
+    clipping::{
+        WgpuClippingPlan, WgpuClippingResources, WgpuMaskRenderTarget, WgpuPreparedClippingContext,
+    },
     texture::{
         WgpuClipParams, WgpuMaskParams, WgpuTexture, WgpuTextureError, WgpuTransform,
         create_wgpu_clip_params, create_wgpu_mask_params, create_wgpu_transform, rgba8_len,

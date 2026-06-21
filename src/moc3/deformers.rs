@@ -287,18 +287,16 @@ impl Moc3Deformers {
             let specific = usize::try_from(*self.specific_indices.get(idx)?).ok()?;
             let composed_deformer = match *self.deformer_kinds.get(idx)? {
                 Moc3DeformerKind::Warp => {
-                    let mut grid = self.interpolated_warp_grid(specific, bindings, parameter_values)?;
+                    let mut grid =
+                        self.interpolated_warp_grid(specific, bindings, parameter_values)?;
                     let cols = usize::try_from(*self.warp_cols.get(specific)?).ok()?;
                     let rows = usize::try_from(*self.warp_rows.get(specific)?).ok()?;
                     for point in &mut grid {
                         *point = apply_composed_parent(&composed, parent, *point)?;
                     }
                     let scale_accum = parent_scale_accum(&composed, parent);
-                    let opacity = self.interpolated_warp_opacity(
-                        specific,
-                        bindings,
-                        parameter_values,
-                    )?;
+                    let opacity =
+                        self.interpolated_warp_opacity(specific, bindings, parameter_values)?;
                     let opacity_accum = opacity * parent_opacity_accum(&composed, parent);
                     ComposedDeformer::Warp(ComposedWarp {
                         grid,
@@ -309,7 +307,8 @@ impl Moc3Deformers {
                     })
                 }
                 Moc3DeformerKind::Rotation => {
-                    let rotation = self.interpolated_rotation(specific, bindings, parameter_values)?;
+                    let rotation =
+                        self.interpolated_rotation(specific, bindings, parameter_values)?;
                     let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
                     let stepped = apply_composed_parent(
                         &composed,
@@ -321,11 +320,8 @@ impl Moc3Deformers {
                     )?;
                     let parent_angle = (stepped.y() - origin.y()).atan2(stepped.x() - origin.x());
                     let scale_accum = parent_scale_accum(&composed, parent);
-                    let opacity = self.interpolated_rotation_opacity(
-                        specific,
-                        bindings,
-                        parameter_values,
-                    )?;
+                    let opacity =
+                        self.interpolated_rotation_opacity(specific, bindings, parameter_values)?;
                     let opacity_accum = opacity * parent_opacity_accum(&composed, parent);
                     ComposedDeformer::Rotation(ComposedRotation {
                         origin,

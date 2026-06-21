@@ -90,7 +90,12 @@ fn drawable_vertex_bounds(vertices: &[Moc3DrawableVertex]) -> Option<ClippingRec
         max_y = max_y.max(y);
     }
 
-    Some(ClippingRect::new(min_x, min_y, max_x - min_x, max_y - min_y))
+    Some(ClippingRect::new(
+        min_x,
+        min_y,
+        max_x - min_x,
+        max_y - min_y,
+    ))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -385,10 +390,12 @@ impl ClippingPlan {
             let layout = self.contexts[context_index]
                 .layout
                 .ok_or(ClippingLayoutError::MissingLayout { context_index })?;
-            let bounds =
-                clipped_draw_total_bounds(drawables, self.contexts[context_index].drawable_indices())?
-                    .ok_or(ClippingLayoutError::DegenerateClippedBounds { context_index })?
-                    .expanded(0.05);
+            let bounds = clipped_draw_total_bounds(
+                drawables,
+                self.contexts[context_index].drawable_indices(),
+            )?
+            .ok_or(ClippingLayoutError::DegenerateClippedBounds { context_index })?
+            .expanded(0.05);
             let (matrix_for_mask, matrix_for_draw) = clipping_matrices(bounds, layout.bounds())
                 .ok_or(ClippingLayoutError::DegenerateClippedBounds { context_index })?;
 
@@ -455,10 +462,7 @@ fn clipped_draw_total_bounds(
     Ok(bounds)
 }
 
-fn clipping_matrices(
-    bounds: ClippingRect,
-    layout: ClippingRect,
-) -> Option<(Matrix44, Matrix44)> {
+fn clipping_matrices(bounds: ClippingRect, layout: ClippingRect) -> Option<(Matrix44, Matrix44)> {
     if bounds.width <= 0.0 || bounds.height <= 0.0 {
         return None;
     }

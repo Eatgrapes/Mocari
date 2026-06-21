@@ -170,9 +170,7 @@ mod core_blend {
 }
 
 mod core_keyforms {
-    use mocari::core::{
-        KeyformAxis, compute_keyform_axis_interval, expand_keyform_runtime_slots,
-    };
+    use mocari::core::{KeyformAxis, compute_keyform_axis_interval, expand_keyform_runtime_slots};
 
     fn assert_close(actual: f32, expected: f32) {
         assert!(
