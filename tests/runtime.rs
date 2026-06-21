@@ -1,4 +1,4 @@
-use rusty_live2d::{
+use mocari::{
     assets::{load_model, load_model_runtime},
     json::Motion3,
     motion::MotionPlayer,
@@ -70,7 +70,7 @@ fn set_parameter_clamps_to_model_range() {
 fn motion_player_drives_a_parameter_over_time() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let motion =
-        rusty_live2d::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json")
+        mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json")
             .unwrap();
 
     let target = motion
@@ -137,7 +137,7 @@ fn looping_motion_wraps_time() {
     assert!((player.time() - 0.5).abs() < 0.0001);
 }
 
-fn hiyori_mesh_snapshot(model: &rusty_live2d::assets::RuntimeModel) -> Vec<Vec<[f32; 2]>> {
+fn hiyori_mesh_snapshot(model: &mocari::assets::RuntimeModel) -> Vec<Vec<[f32; 2]>> {
     model
         .runtime()
         .meshes()

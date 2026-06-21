@@ -1,5 +1,5 @@
 mod model3 {
-    use rusty_live2d::{Error, json::Model3};
+    use mocari::{Error, json::Model3};
 
     #[test]
     fn parses_minimal_model3_file_references() {
@@ -86,7 +86,7 @@ mod model3 {
 }
 
 mod expression3 {
-    use rusty_live2d::json::{
+    use mocari::json::{
         Expression3, ExpressionBlend, apply_expression_blend, apply_expression_parameter,
     };
 
@@ -188,7 +188,7 @@ mod expression3 {
 }
 
 mod cdi3 {
-    use rusty_live2d::{Error, json::Cdi3};
+    use mocari::{Error, json::Cdi3};
 
     #[test]
     fn parses_cdi3_display_metadata() {
@@ -272,7 +272,7 @@ mod cdi3 {
 }
 
 mod pose3 {
-    use rusty_live2d::json::{
+    use mocari::json::{
         Pose3, copy_pose_link_opacities, resolved_pose_fade_in_time, update_pose_group_opacities,
     };
 

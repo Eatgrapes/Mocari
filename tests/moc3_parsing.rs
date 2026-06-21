@@ -1,5 +1,5 @@
 mod moc3_header {
-    use rusty_live2d::{
+    use mocari::{
         Error,
         moc3::{Endianness, Moc3Header, Moc3Version},
     };
@@ -68,7 +68,7 @@ mod moc3_header {
 }
 
 mod moc3_canvas {
-    use rusty_live2d::{Error, moc3::Moc3CanvasInfo};
+    use mocari::{Error, moc3::Moc3CanvasInfo};
 
     #[test]
     fn parses_moc3_canvas_info() {
@@ -116,7 +116,7 @@ mod moc3_canvas {
 }
 
 mod moc3_counts {
-    use rusty_live2d::{Error, moc3::Moc3CountInfo};
+    use mocari::{Error, moc3::Moc3CountInfo};
 
     #[test]
     fn parses_basic_moc3_count_info() {
@@ -170,7 +170,7 @@ mod moc3_counts {
 }
 
 mod moc3_ids {
-    use rusty_live2d::{Error, moc3::Moc3Ids};
+    use mocari::{Error, moc3::Moc3Ids};
 
     #[test]
     fn parses_moc3_fixed_width_id_sections() {
@@ -228,7 +228,7 @@ mod moc3_ids {
 }
 
 mod moc3_offsets {
-    use rusty_live2d::{Error, moc3::Moc3SectionOffsets};
+    use mocari::{Error, moc3::Moc3SectionOffsets};
 
     #[test]
     fn parses_confirmed_moc3_section_offsets() {

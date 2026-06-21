@@ -1,4 +1,4 @@
-use rusty_live2d::{
+use mocari::{
     Error,
     json::{Motion3, MotionPoint, MotionSegment},
     json::{

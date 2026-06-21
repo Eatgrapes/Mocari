@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 
-use rusty_live2d::{
+use mocari::{
     json::{Cdi3, Model3, Motion3, Physics3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3CountInfo, Moc3Header, Moc3Ids,

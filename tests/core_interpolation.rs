@@ -1,4 +1,4 @@
-use rusty_live2d::core::{
+use mocari::core::{
     ArrayInterpolationGroup, InterpolationGroup, interpolate_float32, interpolate_float32_array,
     interpolate_float32_array_grouped, interpolate_float32_grouped, interpolate_int32,
 };

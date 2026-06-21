@@ -1,4 +1,4 @@
-# Rusty Live2D
+# Mocari
 
 A pure Rust Live2D/Cubism runtime experiment with a `wgpu` renderer.
 
@@ -8,12 +8,12 @@ A pure Rust Live2D/Cubism runtime experiment with a `wgpu` renderer.
 ## Why
 
 Live2D Cubism Core is closed source. For a long time, developers have mostly had to use **native bindings** to call it from languages like Rust.
-That approach limits portability, integration, and optimization, which is why Rusty-Live2D exists.
+That approach limits portability, integration, and optimization, which is why Mocari exists.
 Rust is fast and reliable, making it a strong choice for rebuilding a Live2D-compatible runtime.
 
 ## Goal
 
-Rusty-Live2D aims to become a practical **Rust library**.
+Mocari aims to become a practical **Rust library**.
 It should be easy to use, easy to call, and simple to integrate without complicated native runtime setup.
 
 ## Build
@@ -24,8 +24,8 @@ You need:
 - **Cargo**
 
 ```bash
-git clone https://github.com/Eatgrapes/Rusty-Live2d.git
-cd Rusty-Live2D
+git clone https://github.com/Eatgrapes/Mocari.git
+cd Mocari
 cargo build
 ```
 
@@ -41,7 +41,7 @@ This project currently implements:
 
 ## Statement
 
-Rusty Live2D is an unofficial and independent experimental project.
+Mocari is an unofficial and independent experimental project.
 This project is not affiliated with, endorsed by, sponsored by, or certified by Live2D Inc. "Live2D" and "Cubism" are trademarks or registered trademarks of their respective owners.
 This repository does not contain Live2D Cubism Core, Live2D SDK binaries, official source code, or any proprietary files distributed by Live2D Inc.
 The purpose of this project is to explore a pure Rust runtime and renderer for compatible 2D model data. It is provided for educational, research, and interoperability purposes only.

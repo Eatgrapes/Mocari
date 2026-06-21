@@ -7,7 +7,7 @@ use std::{
 };
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
-use rusty_live2d::{
+use mocari::{
     ModelRuntime, MotionPlayer,
     assets::{DecodedTexture, load_model_runtime},
     core::Matrix44,

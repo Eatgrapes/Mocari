@@ -854,6 +854,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mocari"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "image",
+ "pollster",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "winit",
+ "zip",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1522,20 +1536,6 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
-
-[[package]]
-name = "rusty-live2d"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "image",
- "pollster",
- "serde",
- "serde_json",
- "wgpu",
- "winit",
- "zip",
-]
 
 [[package]]
 name = "same-file"

@@ -1,4 +1,4 @@
-use rusty_live2d::core::{
+use mocari::core::{
     PhysicsInputAccumulator, PhysicsParticle, PhysicsRange, Vector2, direction_to_radian,
     normalize_physics_parameter, parent_gravity_for_physics_output,
     physics_output_angle_with_parent_gravity, physics_output_translation_x,

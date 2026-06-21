@@ -1,4 +1,4 @@
-use rusty_live2d::{
+use mocari::{
     Error,
     json::{Physics3, PhysicsValueKind},
 };
