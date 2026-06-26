@@ -3,8 +3,8 @@ use crate::{Result, core::Vector2};
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     compose::{
-        ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp,
-        apply_composed_parent, parent_opacity_accum, parent_rotation_angle, parent_scale_accum,
+        ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp, apply_composed_parent,
+        parent_opacity_accum, parent_rotation_angle, parent_scale_accum,
     },
     keyform_bindings::{Moc3KeyformBindings, Moc3KeyformSlot},
     parse::{
@@ -310,12 +310,8 @@ impl Moc3Deformers {
                     let rotation =
                         self.interpolated_rotation(specific, bindings, parameter_values)?;
                     let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
-                    let parent_angle = parent_rotation_angle(
-                        &composed,
-                        parent,
-                        origin,
-                        rotation.translation,
-                    )?;
+                    let parent_angle =
+                        parent_rotation_angle(&composed, parent, origin, rotation.translation)?;
                     let scale_accum = parent_scale_accum(&composed, parent);
                     let opacity =
                         self.interpolated_rotation_opacity(specific, bindings, parameter_values)?;
