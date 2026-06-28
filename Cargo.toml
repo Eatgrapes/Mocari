@@ -2,7 +2,7 @@
 name = "mocari"
 version = "0.1.1"
 edition = "2024"
-description = "A pure Rust Live2D/Cubism-compatible runtime, with an optional wgpu renderer"
+description = "A pure Rust Live2D/Cubism-compatible runtime"
 license = "MIT"
 repository = "https://github.com/Eatgrapes/Mocari"
 readme = "README.md"
