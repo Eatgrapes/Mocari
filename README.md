@@ -64,7 +64,7 @@ This project currently implements:
 - [x] Reading `.moc3` files
 - [x] Rendering models correctly
 - [x] Rendering model motions
-- [ ] Rendering model expressions
+- [x] Rendering model expressions
 - [ ] More Cubism runtime features
 
 ## Statement
