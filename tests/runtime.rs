@@ -68,6 +68,104 @@ fn set_parameter_clamps_to_model_range() {
 }
 
 #[test]
+fn parameter_info_exposes_range_default_and_current_value() {
+    let model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let index = model.runtime().parameter_index("ParamAngleX").unwrap();
+    let info = model.runtime().parameter_info_by_index(index).unwrap();
+
+    assert_eq!(info.id(), "ParamAngleX");
+    assert!(info.minimum() < info.maximum());
+    assert!(info.minimum() <= info.default());
+    assert!(info.default() <= info.maximum());
+    assert_eq!(info.default(), info.value());
+    assert_eq!(
+        model.runtime().parameter_infos().count(),
+        model.runtime().parameter_ids().len()
+    );
+}
+
+#[test]
+fn set_parameter_normalized_maps_unit_range_to_model_range() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let index = model.runtime().parameter_index("ParamAngleX").unwrap();
+    let info = model.runtime().parameter_info_by_index(index).unwrap();
+    let expected = info.minimum() + (info.maximum() - info.minimum()) * 0.75;
+
+    assert!(
+        model
+            .runtime_mut()
+            .set_parameter_normalized_by_index(index, 0.75)
+    );
+
+    assert_close(
+        model.runtime().parameter_value_by_index(index).unwrap(),
+        expected,
+    );
+    assert_close(
+        model
+            .runtime()
+            .parameter_normalized_value_by_index(index)
+            .unwrap(),
+        0.75,
+    );
+
+    assert!(
+        model
+            .runtime_mut()
+            .set_parameter_normalized("ParamAngleX", 2.0)
+    );
+    assert_close(
+        model
+            .runtime()
+            .parameter_normalized_value_by_index(index)
+            .unwrap(),
+        1.0,
+    );
+}
+
+#[test]
+fn parameter_overrides_can_be_applied_after_parameter_reset() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let index = model.runtime().parameter_index("ParamAngleX").unwrap();
+    let info = model.runtime().parameter_info_by_index(index).unwrap();
+    let maximum = info.maximum();
+    let default = info.default();
+
+    assert!(
+        model
+            .runtime_mut()
+            .set_parameter_override_normalized_by_index(index, 1.0)
+    );
+    model.runtime_mut().reset_parameters();
+    model.runtime_mut().apply_parameter_overrides();
+    assert_close(
+        model.runtime().parameter_value_by_index(index).unwrap(),
+        maximum,
+    );
+    assert_close(
+        model
+            .runtime()
+            .parameter_override_normalized_value_by_index(index)
+            .unwrap(),
+        1.0,
+    );
+
+    assert!(model.runtime_mut().clear_parameter_override_by_index(index));
+    model.runtime_mut().reset_parameters();
+    model.runtime_mut().apply_parameter_overrides();
+    assert_close(
+        model.runtime().parameter_value_by_index(index).unwrap(),
+        default,
+    );
+    assert!(
+        model
+            .runtime()
+            .parameter_override_value_by_index(index)
+            .is_none()
+    );
+}
+
+#[test]
 fn motion_player_drives_a_parameter_over_time() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let motion =

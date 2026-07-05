@@ -14,4 +14,4 @@ pub use crate::core::{DrawableId, Id, ParameterId, PartId};
 pub use crate::error::{Error, Result};
 pub use crate::expression::{ExpressionManager, ExpressionPlayer};
 pub use crate::motion::MotionPlayer;
-pub use crate::runtime::ModelRuntime;
+pub use crate::runtime::{ModelRuntime, ParameterInfo};

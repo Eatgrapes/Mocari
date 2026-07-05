@@ -16,6 +16,41 @@ struct PoseGroup {
     links: Vec<Vec<usize>>,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ParameterInfo<'a> {
+    id: &'a str,
+    minimum: f32,
+    maximum: f32,
+    default: f32,
+    value: f32,
+}
+
+impl<'a> ParameterInfo<'a> {
+    pub fn id(&self) -> &'a str {
+        self.id
+    }
+
+    pub fn minimum(&self) -> f32 {
+        self.minimum
+    }
+
+    pub fn maximum(&self) -> f32 {
+        self.maximum
+    }
+
+    pub fn default(&self) -> f32 {
+        self.default
+    }
+
+    pub fn value(&self) -> f32 {
+        self.value
+    }
+
+    pub fn normalized_value(&self) -> f32 {
+        normalized_parameter_value(self.value, self.minimum, self.maximum)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ModelRuntime {
     model: Model3,
@@ -31,6 +66,7 @@ pub struct ModelRuntime {
     draw_order_groups: Option<Moc3DrawOrderGroups>,
     parameter_index: HashMap<String, usize>,
     parameter_values: Vec<f32>,
+    parameter_overrides: Vec<Option<f32>>,
     part_index: HashMap<String, usize>,
     part_opacity_overrides: Vec<Option<f32>>,
     part_opacities: Vec<f32>,
@@ -57,6 +93,7 @@ impl ModelRuntime {
         pose: Option<Pose3>,
     ) -> Option<Self> {
         let parameter_values = bindings.parameter_default_values().to_vec();
+        let parameter_overrides = vec![None; parameter_values.len()];
         let parameter_index = ids
             .parameters()
             .iter()
@@ -95,6 +132,7 @@ impl ModelRuntime {
             draw_order_groups,
             parameter_index,
             parameter_values,
+            parameter_overrides,
             part_index,
             part_opacity_overrides: vec![None; part_count],
             part_opacities: vec![1.0; part_count],
@@ -136,6 +174,49 @@ impl ModelRuntime {
         &self.parameter_values
     }
 
+    pub fn parameter_info(&self, id: &str) -> Option<ParameterInfo<'_>> {
+        let index = self.parameter_index(id)?;
+        self.parameter_info_by_index(index)
+    }
+
+    pub fn parameter_info_by_index(&self, index: usize) -> Option<ParameterInfo<'_>> {
+        Some(ParameterInfo {
+            id: self.ids.parameters().get(index)?.as_str(),
+            minimum: self.parameter_minimum_by_index(index)?,
+            maximum: self.parameter_maximum_by_index(index)?,
+            default: self.parameter_default_by_index(index)?,
+            value: self.parameter_value_by_index(index)?,
+        })
+    }
+
+    pub fn parameter_infos(&self) -> impl Iterator<Item = ParameterInfo<'_>> + '_ {
+        (0..self.ids.parameters().len()).filter_map(|index| self.parameter_info_by_index(index))
+    }
+
+    pub fn parameter_minimum_by_index(&self, index: usize) -> Option<f32> {
+        self.bindings.parameter_min_values().get(index).copied()
+    }
+
+    pub fn parameter_maximum_by_index(&self, index: usize) -> Option<f32> {
+        self.bindings.parameter_max_values().get(index).copied()
+    }
+
+    pub fn parameter_default_by_index(&self, index: usize) -> Option<f32> {
+        self.bindings.parameter_default_values().get(index).copied()
+    }
+
+    pub fn parameter_normalized_value(&self, id: &str) -> Option<f32> {
+        let index = self.parameter_index(id)?;
+        self.parameter_normalized_value_by_index(index)
+    }
+
+    pub fn parameter_normalized_value_by_index(&self, index: usize) -> Option<f32> {
+        let minimum = self.parameter_minimum_by_index(index)?;
+        let maximum = self.parameter_maximum_by_index(index)?;
+        let value = self.parameter_value_by_index(index)?;
+        Some(normalized_parameter_value(value, minimum, maximum))
+    }
+
     pub fn set_parameter(&mut self, id: &str, value: f32) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.set_parameter_by_index(index, value),
@@ -161,6 +242,110 @@ impl ModelRuntime {
             .unwrap_or(f32::MAX);
         *slot = clamp_parameter_value(value, minimum, maximum);
         true
+    }
+
+    pub fn set_parameter_normalized(&mut self, id: &str, value: f32) -> bool {
+        match self.parameter_index(id) {
+            Some(index) => self.set_parameter_normalized_by_index(index, value),
+            None => false,
+        }
+    }
+
+    pub fn set_parameter_normalized_by_index(&mut self, index: usize, value: f32) -> bool {
+        let Some(raw) = self.raw_parameter_value_from_normalized_index(index, value) else {
+            return false;
+        };
+        self.set_parameter_by_index(index, raw)
+    }
+
+    pub fn parameter_override_value(&self, id: &str) -> Option<f32> {
+        let index = self.parameter_index(id)?;
+        self.parameter_override_value_by_index(index)
+    }
+
+    pub fn parameter_override_value_by_index(&self, index: usize) -> Option<f32> {
+        self.parameter_overrides.get(index).copied().flatten()
+    }
+
+    pub fn parameter_override_normalized_value(&self, id: &str) -> Option<f32> {
+        let index = self.parameter_index(id)?;
+        self.parameter_override_normalized_value_by_index(index)
+    }
+
+    pub fn parameter_override_normalized_value_by_index(&self, index: usize) -> Option<f32> {
+        let minimum = self.parameter_minimum_by_index(index)?;
+        let maximum = self.parameter_maximum_by_index(index)?;
+        let value = self.parameter_override_value_by_index(index)?;
+        Some(normalized_parameter_value(value, minimum, maximum))
+    }
+
+    pub fn set_parameter_override(&mut self, id: &str, value: f32) -> bool {
+        match self.parameter_index(id) {
+            Some(index) => self.set_parameter_override_by_index(index, value),
+            None => false,
+        }
+    }
+
+    pub fn set_parameter_override_by_index(&mut self, index: usize, value: f32) -> bool {
+        if index >= self.parameter_overrides.len() {
+            return false;
+        }
+        let Some(minimum) = self.parameter_minimum_by_index(index) else {
+            return false;
+        };
+        let Some(maximum) = self.parameter_maximum_by_index(index) else {
+            return false;
+        };
+        self.parameter_overrides[index] = Some(clamp_parameter_value(value, minimum, maximum));
+        true
+    }
+
+    pub fn set_parameter_override_normalized(&mut self, id: &str, value: f32) -> bool {
+        match self.parameter_index(id) {
+            Some(index) => self.set_parameter_override_normalized_by_index(index, value),
+            None => false,
+        }
+    }
+
+    pub fn set_parameter_override_normalized_by_index(&mut self, index: usize, value: f32) -> bool {
+        let Some(raw) = self.raw_parameter_value_from_normalized_index(index, value) else {
+            return false;
+        };
+        self.set_parameter_override_by_index(index, raw)
+    }
+
+    pub fn clear_parameter_override(&mut self, id: &str) -> bool {
+        match self.parameter_index(id) {
+            Some(index) => self.clear_parameter_override_by_index(index),
+            None => false,
+        }
+    }
+
+    pub fn clear_parameter_override_by_index(&mut self, index: usize) -> bool {
+        let Some(slot) = self.parameter_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = None;
+        true
+    }
+
+    pub fn clear_parameter_overrides(&mut self) {
+        self.parameter_overrides.fill(None);
+    }
+
+    pub fn apply_parameter_overrides(&mut self) {
+        for index in 0..self.parameter_overrides.len() {
+            if let Some(value) = self.parameter_overrides[index] {
+                self.set_parameter_by_index(index, value);
+            }
+        }
+    }
+
+    fn raw_parameter_value_from_normalized_index(&self, index: usize, value: f32) -> Option<f32> {
+        let minimum = self.parameter_minimum_by_index(index)?;
+        let maximum = self.parameter_maximum_by_index(index)?;
+        let amount = value.clamp(0.0, 1.0);
+        Some(minimum + (maximum - minimum) * amount)
     }
 
     pub fn reset_parameters(&mut self) {
@@ -333,6 +518,14 @@ impl ModelRuntime {
 
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {
         &self.meshes
+    }
+}
+
+fn normalized_parameter_value(value: f32, minimum: f32, maximum: f32) -> f32 {
+    if maximum <= minimum {
+        0.0
+    } else {
+        ((value - minimum) / (maximum - minimum)).clamp(0.0, 1.0)
     }
 }
 

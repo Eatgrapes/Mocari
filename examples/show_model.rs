@@ -29,9 +29,19 @@ const BUTTON_X: f64 = 16.0;
 const SWITCH_BUTTON_Y: f64 = 16.0;
 const MOTION_BUTTON_Y: f64 = 70.0;
 const EXPRESSION_BUTTON_Y: f64 = 124.0;
+const PREV_PARAMETER_BUTTON_Y: f64 = 178.0;
+const NEXT_PARAMETER_BUTTON_Y: f64 = 232.0;
+const RESET_PARAMETER_BUTTON_Y: f64 = 286.0;
+const PARAMETER_LABEL_Y: f64 = 346.0;
+const PARAMETER_SLIDER_Y: f64 = 386.0;
 const BUTTON_WIDTH: f64 = 168.0;
 const BUTTON_HEIGHT: f64 = 42.0;
 const BUTTON_RGBA: &[u8] = &[46, 65, 78, 235];
+const SLIDER_X: f64 = 16.0;
+const SLIDER_WIDTH: f64 = 260.0;
+const SLIDER_HEIGHT: f64 = 18.0;
+const SLIDER_TRACK_RGBA: &[u8] = &[78, 90, 98, 235];
+const SLIDER_FILL_RGBA: &[u8] = &[76, 149, 208, 245];
 const TEXT_HEIGHT_PX: f32 = 22.0;
 const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
 
@@ -144,21 +154,27 @@ impl ApplicationHandler for ShowModelApp {
                     event_loop.exit();
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => state.cursor_position = Some(position),
+            WindowEvent::CursorMoved { position, .. } => {
+                state.cursor_position = Some(position);
+                if state.dragging_parameter_slider
+                    && let Err(error) = state.update_parameter_slider(position.x)
+                {
+                    eprintln!("parameter slider failed: {error}");
+                    event_loop.exit();
+                }
+            }
             WindowEvent::MouseInput {
                 state: button_state,
                 button,
                 ..
             } => {
-                if button_state == ElementState::Pressed && button == MouseButton::Left {
-                    let result = if state.button_hit(SWITCH_BUTTON_Y) {
-                        state.switch_to_next_model()
-                    } else if state.button_hit(MOTION_BUTTON_Y) {
-                        state.play_random_motion()
-                    } else if state.button_hit(EXPRESSION_BUTTON_Y) {
-                        state.play_random_expression()
-                    } else {
-                        Ok(())
+                if button == MouseButton::Left {
+                    let result = match button_state {
+                        ElementState::Pressed => state.handle_left_press(),
+                        ElementState::Released => {
+                            state.dragging_parameter_slider = false;
+                            Ok(())
+                        }
                     };
                     if let Err(error) = result {
                         eprintln!("button action failed: {error}");
@@ -198,9 +214,22 @@ struct WindowState {
     switch_transform: WgpuTransform,
     motion_transform: WgpuTransform,
     expression_transform: WgpuTransform,
+    prev_parameter_transform: WgpuTransform,
+    next_parameter_transform: WgpuTransform,
+    reset_parameter_transform: WgpuTransform,
     switch_label: LabelQuad,
     motion_label: LabelQuad,
     expression_label: LabelQuad,
+    prev_parameter_label: LabelQuad,
+    next_parameter_label: LabelQuad,
+    reset_parameter_label: LabelQuad,
+    parameter_label: LabelQuad,
+    slider_track_buffers: WgpuMeshBuffers,
+    slider_fill_buffers: WgpuMeshBuffers,
+    slider_track_texture: WgpuTexture,
+    slider_fill_texture: WgpuTexture,
+    selected_parameter_index: Option<usize>,
+    dragging_parameter_slider: bool,
     cursor_position: Option<PhysicalPosition<f64>>,
     last_frame: Instant,
     rng: u64,
@@ -266,6 +295,18 @@ impl WindowState {
             renderer.create_transform(&device, &button_offset_matrix(size, MOTION_BUTTON_Y));
         let expression_transform =
             renderer.create_transform(&device, &button_offset_matrix(size, EXPRESSION_BUTTON_Y));
+        let prev_parameter_transform = renderer.create_transform(
+            &device,
+            &button_offset_matrix(size, PREV_PARAMETER_BUTTON_Y),
+        );
+        let next_parameter_transform = renderer.create_transform(
+            &device,
+            &button_offset_matrix(size, NEXT_PARAMETER_BUTTON_Y),
+        );
+        let reset_parameter_transform = renderer.create_transform(
+            &device,
+            &button_offset_matrix(size, RESET_PARAMETER_BUTTON_Y),
+        );
         let switch_label = create_label_quad(
             &renderer,
             &device,
@@ -293,6 +334,53 @@ impl WindowState {
             size,
             EXPRESSION_BUTTON_Y,
         )?;
+        let prev_parameter_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Prev Param",
+            size,
+            PREV_PARAMETER_BUTTON_Y,
+        )?;
+        let next_parameter_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Next Param",
+            size,
+            NEXT_PARAMETER_BUTTON_Y,
+        )?;
+        let reset_parameter_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Reset Param",
+            size,
+            RESET_PARAMETER_BUTTON_Y,
+        )?;
+        let selected_parameter_index = initial_parameter_selection(&model.runtime);
+        let parameter_label = create_parameter_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            &model.runtime,
+            selected_parameter_index,
+            size,
+        )?;
+        let slider_track_buffers = create_slider_track_buffers(&device, size)?;
+        let slider_fill_buffers = create_slider_fill_buffers(
+            &device,
+            size,
+            selected_parameter_normalized(&model.runtime, selected_parameter_index),
+        )?;
+        let slider_track_texture =
+            renderer.create_rgba8_texture(&device, &queue, 1, 1, SLIDER_TRACK_RGBA)?;
+        let slider_fill_texture =
+            renderer.create_rgba8_texture(&device, &queue, 1, 1, SLIDER_FILL_RGBA)?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
@@ -310,9 +398,22 @@ impl WindowState {
             switch_transform,
             motion_transform,
             expression_transform,
+            prev_parameter_transform,
+            next_parameter_transform,
+            reset_parameter_transform,
             switch_label,
             motion_label,
             expression_label,
+            prev_parameter_label,
+            next_parameter_label,
+            reset_parameter_label,
+            parameter_label,
+            slider_track_buffers,
+            slider_fill_buffers,
+            slider_track_texture,
+            slider_fill_texture,
+            selected_parameter_index,
+            dragging_parameter_slider: false,
             cursor_position: None,
             last_frame: Instant::now(),
             rng: 0x9e37_79b9_7f4a_7c15,
@@ -338,6 +439,18 @@ impl WindowState {
         self.expression_transform = self.renderer.create_transform(
             &self.device,
             &button_offset_matrix(size, EXPRESSION_BUTTON_Y),
+        );
+        self.prev_parameter_transform = self.renderer.create_transform(
+            &self.device,
+            &button_offset_matrix(size, PREV_PARAMETER_BUTTON_Y),
+        );
+        self.next_parameter_transform = self.renderer.create_transform(
+            &self.device,
+            &button_offset_matrix(size, NEXT_PARAMETER_BUTTON_Y),
+        );
+        self.reset_parameter_transform = self.renderer.create_transform(
+            &self.device,
+            &button_offset_matrix(size, RESET_PARAMETER_BUTTON_Y),
         );
         self.switch_label = create_label_quad(
             &self.renderer,
@@ -366,6 +479,35 @@ impl WindowState {
             size,
             EXPRESSION_BUTTON_Y,
         )?;
+        self.prev_parameter_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Prev Param",
+            size,
+            PREV_PARAMETER_BUTTON_Y,
+        )?;
+        self.next_parameter_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Next Param",
+            size,
+            NEXT_PARAMETER_BUTTON_Y,
+        )?;
+        self.reset_parameter_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Reset Param",
+            size,
+            RESET_PARAMETER_BUTTON_Y,
+        )?;
+        self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
+        self.refresh_parameter_controls()?;
         Ok(())
     }
 
@@ -373,6 +515,36 @@ impl WindowState {
         self.cursor_position
             .map(|position| button_rect(top).contains(position.x, position.y))
             .unwrap_or(false)
+    }
+
+    fn slider_hit(&self) -> bool {
+        self.cursor_position
+            .map(|position| slider_rect(PARAMETER_SLIDER_Y).contains(position.x, position.y))
+            .unwrap_or(false)
+    }
+
+    fn handle_left_press(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.button_hit(SWITCH_BUTTON_Y) {
+            self.switch_to_next_model()
+        } else if self.button_hit(MOTION_BUTTON_Y) {
+            self.play_random_motion()
+        } else if self.button_hit(EXPRESSION_BUTTON_Y) {
+            self.play_random_expression()
+        } else if self.button_hit(PREV_PARAMETER_BUTTON_Y) {
+            self.select_previous_parameter()
+        } else if self.button_hit(NEXT_PARAMETER_BUTTON_Y) {
+            self.select_next_parameter()
+        } else if self.button_hit(RESET_PARAMETER_BUTTON_Y) {
+            self.reset_selected_parameter()
+        } else if self.slider_hit() {
+            self.dragging_parameter_slider = true;
+            if let Some(position) = self.cursor_position {
+                self.update_parameter_slider(position.x)?;
+            }
+            Ok(())
+        } else {
+            Ok(())
+        }
     }
 
     fn play_random_motion(&mut self) -> Result<(), Box<dyn Error>> {
@@ -399,6 +571,71 @@ impl WindowState {
         Ok(())
     }
 
+    fn select_previous_parameter(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some(current) = self.selected_parameter_index {
+            self.selected_parameter_index =
+                previous_parameter_index(current, self.model.runtime.parameter_ids().len());
+            self.refresh_parameter_controls()?;
+            self.window.request_redraw();
+        }
+        Ok(())
+    }
+
+    fn select_next_parameter(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some(current) = self.selected_parameter_index {
+            self.selected_parameter_index =
+                next_parameter_index(current, self.model.runtime.parameter_ids().len());
+            self.refresh_parameter_controls()?;
+            self.window.request_redraw();
+        }
+        Ok(())
+    }
+
+    fn reset_selected_parameter(&mut self) -> Result<(), Box<dyn Error>> {
+        let Some(index) = self.selected_parameter_index else {
+            return Ok(());
+        };
+        self.model.runtime.clear_parameter_override_by_index(index);
+        if let Some(default) = self.model.runtime.parameter_default_by_index(index) {
+            self.model.runtime.set_parameter_by_index(index, default);
+        }
+        self.refresh_parameter_controls()?;
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn update_parameter_slider(&mut self, x: f64) -> Result<(), Box<dyn Error>> {
+        let Some(index) = self.selected_parameter_index else {
+            return Ok(());
+        };
+        let value = slider_rect(PARAMETER_SLIDER_Y).normalized_value(x);
+        self.model
+            .runtime
+            .set_parameter_override_normalized_by_index(index, value);
+        self.refresh_parameter_controls()?;
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn refresh_parameter_controls(&mut self) -> Result<(), Box<dyn Error>> {
+        let size = self.window.inner_size();
+        self.parameter_label = create_parameter_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            &self.model.runtime,
+            self.selected_parameter_index,
+            size,
+        )?;
+        self.slider_fill_buffers = create_slider_fill_buffers(
+            &self.device,
+            size,
+            selected_parameter_normalized(&self.model.runtime, self.selected_parameter_index),
+        )?;
+        Ok(())
+    }
+
     fn next_rng(&mut self) -> u64 {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 7;
@@ -422,6 +659,7 @@ impl WindowState {
         }
         self.model.expression_manager.tick(delta);
         self.model.expression_manager.apply(&mut self.model.runtime);
+        self.model.runtime.apply_parameter_overrides();
         self.model.runtime.apply_pose(delta);
         if self.model.runtime.update_meshes().is_none() {
             return Err(Box::new(ExampleError("failed to rebuild model meshes")));
@@ -445,6 +683,8 @@ impl WindowState {
 
         self.model_index = next_index;
         self.model = model;
+        self.selected_parameter_index = initial_parameter_selection(&self.model.runtime);
+        self.refresh_parameter_controls()?;
         self.window.set_title(&window_title(spec));
         self.window.request_redraw();
         Ok(())
@@ -554,6 +794,36 @@ impl WindowState {
             )?;
             self.renderer.draw_with_textures_and_transform(
                 &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.prev_parameter_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.next_parameter_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.reset_parameter_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.slider_track_buffers,
+                std::slice::from_ref(&self.slider_track_texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.slider_fill_buffers,
+                std::slice::from_ref(&self.slider_fill_texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
                 &self.switch_label.buffers,
                 std::slice::from_ref(&self.switch_label.texture),
                 &self.switch_transform,
@@ -568,6 +838,30 @@ impl WindowState {
                 &mut pass,
                 &self.expression_label.buffers,
                 std::slice::from_ref(&self.expression_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.prev_parameter_label.buffers,
+                std::slice::from_ref(&self.prev_parameter_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.next_parameter_label.buffers,
+                std::slice::from_ref(&self.next_parameter_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.reset_parameter_label.buffers,
+                std::slice::from_ref(&self.reset_parameter_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.parameter_label.buffers,
+                std::slice::from_ref(&self.parameter_label.texture),
                 &self.switch_transform,
             )?;
         }
@@ -589,6 +883,64 @@ fn next_model_index(current: usize, count: usize) -> Option<usize> {
     } else {
         Some((current + 1) % count)
     }
+}
+
+fn initial_parameter_selection(runtime: &ModelRuntime) -> Option<usize> {
+    const PREFERRED_PARAMETERS: &[&str] = &[
+        "ParamEyeLOpen",
+        "ParamEyeROpen",
+        "ParamEyeOpen",
+        "ParamMouthOpenY",
+    ];
+    PREFERRED_PARAMETERS
+        .iter()
+        .find_map(|id| runtime.parameter_index(id))
+        .or_else(|| (!runtime.parameter_ids().is_empty()).then_some(0))
+}
+
+fn previous_parameter_index(current: usize, count: usize) -> Option<usize> {
+    if count == 0 {
+        None
+    } else {
+        Some((current + count - 1) % count)
+    }
+}
+
+fn next_parameter_index(current: usize, count: usize) -> Option<usize> {
+    if count == 0 {
+        None
+    } else {
+        Some((current + 1) % count)
+    }
+}
+
+fn selected_parameter_normalized(runtime: &ModelRuntime, index: Option<usize>) -> f32 {
+    let Some(index) = index else {
+        return 0.0;
+    };
+    runtime
+        .parameter_override_normalized_value_by_index(index)
+        .or_else(|| runtime.parameter_normalized_value_by_index(index))
+        .unwrap_or(0.0)
+}
+
+fn parameter_label_text(runtime: &ModelRuntime, index: Option<usize>) -> String {
+    let Some(index) = index else {
+        return "No parameters".to_owned();
+    };
+    let Some(info) = runtime.parameter_info_by_index(index) else {
+        return "No parameters".to_owned();
+    };
+    let value = runtime
+        .parameter_override_value_by_index(index)
+        .unwrap_or_else(|| info.value());
+    format!(
+        "{} {:.2} [{:.2}..{:.2}]",
+        info.id(),
+        value,
+        info.minimum(),
+        info.maximum()
+    )
 }
 
 fn load_rendered_model(
@@ -715,6 +1067,51 @@ fn create_label_quad(
     Ok(LabelQuad { buffers, texture })
 }
 
+fn create_parameter_label_quad(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    runtime: &ModelRuntime,
+    index: Option<usize>,
+    surface_size: PhysicalSize<u32>,
+) -> Result<LabelQuad, Box<dyn Error>> {
+    create_text_label_quad(
+        renderer,
+        device,
+        queue,
+        font,
+        &parameter_label_text(runtime, index),
+        surface_size,
+        [BUTTON_X, PARAMETER_LABEL_Y],
+    )
+}
+
+fn create_text_label_quad(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    text: &str,
+    surface_size: PhysicalSize<u32>,
+    position: [f64; 2],
+) -> Result<LabelQuad, Box<dyn Error>> {
+    let (width, height, rgba) = rasterize_text(font, text);
+    let texture = renderer.create_rgba8_texture(device, queue, width, height, &rgba)?;
+    let mesh = textured_quad_mesh(
+        surface_size,
+        position[0],
+        position[1],
+        f64::from(width),
+        f64::from(height),
+    )
+    .ok_or(ExampleError("invalid label size"))?;
+    let buffers = WgpuMeshBuffers::from_drawables(device, &[mesh])
+        .ok_or(ExampleError("failed to create label buffers"))?;
+
+    Ok(LabelQuad { buffers, texture })
+}
+
 fn rasterize_text(font: &FontArc, text: &str) -> (u32, u32, Vec<u8>) {
     let scale = TEXT_HEIGHT_PX;
     let ascent = font.as_scaled(scale).ascent();
@@ -794,6 +1191,24 @@ impl ButtonRect {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct SliderRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl SliderRect {
+    fn contains(self, x: f64, y: f64) -> bool {
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+
+    fn normalized_value(self, x: f64) -> f32 {
+        ((x - self.x) / self.width).clamp(0.0, 1.0) as f32
+    }
+}
+
 fn button_rect(top: f64) -> ButtonRect {
     ButtonRect {
         x: BUTTON_X,
@@ -803,15 +1218,74 @@ fn button_rect(top: f64) -> ButtonRect {
     }
 }
 
+fn slider_rect(top: f64) -> SliderRect {
+    SliderRect {
+        x: SLIDER_X,
+        y: top,
+        width: SLIDER_WIDTH,
+        height: SLIDER_HEIGHT,
+    }
+}
+
 fn create_button_quad_buffers(
     device: &wgpu::Device,
     surface_size: PhysicalSize<u32>,
     top: f64,
 ) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
-    let mesh = textured_quad_mesh(surface_size, BUTTON_X, top, BUTTON_WIDTH, BUTTON_HEIGHT)
-        .ok_or(ExampleError("invalid button size"))?;
+    create_rect_quad_buffers(
+        device,
+        surface_size,
+        BUTTON_X,
+        top,
+        BUTTON_WIDTH,
+        BUTTON_HEIGHT,
+    )
+}
+
+fn create_slider_track_buffers(
+    device: &wgpu::Device,
+    surface_size: PhysicalSize<u32>,
+) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
+    let slider = slider_rect(PARAMETER_SLIDER_Y);
+    create_rect_quad_buffers(
+        device,
+        surface_size,
+        slider.x,
+        slider.y,
+        slider.width,
+        slider.height,
+    )
+}
+
+fn create_slider_fill_buffers(
+    device: &wgpu::Device,
+    surface_size: PhysicalSize<u32>,
+    normalized: f32,
+) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
+    let slider = slider_rect(PARAMETER_SLIDER_Y);
+    let width = (slider.width * f64::from(normalized.clamp(0.0, 1.0))).max(1.0);
+    create_rect_quad_buffers(
+        device,
+        surface_size,
+        slider.x,
+        slider.y,
+        width,
+        slider.height,
+    )
+}
+
+fn create_rect_quad_buffers(
+    device: &wgpu::Device,
+    surface_size: PhysicalSize<u32>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
+    let mesh = textured_quad_mesh(surface_size, x, y, width, height)
+        .ok_or(ExampleError("invalid rectangle size"))?;
     WgpuMeshBuffers::from_drawables(device, &[mesh])
-        .ok_or_else(|| Box::new(ExampleError("failed to create button buffers")).into())
+        .ok_or_else(|| Box::new(ExampleError("failed to create rectangle buffers")).into())
 }
 
 fn button_offset_matrix(surface_size: PhysicalSize<u32>, top: f64) -> Matrix44 {
@@ -1070,6 +1544,49 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    #[test]
+    fn parameter_buttons_stack_below_expression_button() {
+        let expression = button_rect(EXPRESSION_BUTTON_Y);
+        let previous = button_rect(PREV_PARAMETER_BUTTON_Y);
+        let next = button_rect(NEXT_PARAMETER_BUTTON_Y);
+        let reset = button_rect(RESET_PARAMETER_BUTTON_Y);
+
+        assert!(previous.y > expression.y + expression.height - 0.0001);
+        assert!(next.y > previous.y + previous.height - 0.0001);
+        assert!(reset.y > next.y + next.height - 0.0001);
+        assert_eq!(expression.x, previous.x);
+    }
+
+    #[test]
+    fn initial_parameter_selection_prefers_eye_open_parameter() {
+        let loaded = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+        let index = initial_parameter_selection(loaded.runtime()).unwrap();
+
+        assert_eq!(loaded.runtime().parameter_ids()[index], "ParamEyeLOpen");
+    }
+
+    #[test]
+    fn parameter_index_navigation_wraps() {
+        assert_eq!(next_parameter_index(0, 3), Some(1));
+        assert_eq!(next_parameter_index(2, 3), Some(0));
+        assert_eq!(previous_parameter_index(0, 3), Some(2));
+        assert_eq!(previous_parameter_index(1, 3), Some(0));
+        assert_eq!(next_parameter_index(0, 0), None);
+        assert_eq!(previous_parameter_index(0, 0), None);
+    }
+
+    #[test]
+    fn slider_position_maps_to_clamped_normalized_value() {
+        let slider = slider_rect(PARAMETER_SLIDER_Y);
+
+        assert_close(slider.normalized_value(slider.x - 20.0), 0.0);
+        assert_close(
+            slider.normalized_value(slider.x + slider.width * 0.25),
+            0.25,
+        );
+        assert_close(slider.normalized_value(slider.x + slider.width + 20.0), 1.0);
     }
 
     fn assert_close(actual: f32, expected: f32) {
