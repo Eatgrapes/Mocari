@@ -548,7 +548,7 @@ fn create_live2d_pipeline(
     blend_mode: Moc3DrawableBlendMode,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let vertex_buffers = [drawable_vertex_layout()];
+    let vertex_buffers = [Some(drawable_vertex_layout())];
     let color_targets = [Some(wgpu::ColorTargetState {
         format: color_format,
         blend: Some(live2d_blend_state(blend_mode)),
@@ -587,7 +587,7 @@ fn create_live2d_mask_pipeline(
     shader: &wgpu::ShaderModule,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let vertex_buffers = [drawable_vertex_layout()];
+    let vertex_buffers = [Some(drawable_vertex_layout())];
     let color_targets = [Some(wgpu::ColorTargetState {
         format: wgpu::TextureFormat::Rgba8Unorm,
         blend: Some(wgpu_mask_blend_state()),

@@ -18,7 +18,7 @@ wgpu = ["dep:wgpu"]
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-wgpu = { version = "29.0.3", features = ["noop"], optional = true }
+wgpu = { version = "30.0.0", features = ["noop"], optional = true }
 
 [dev-dependencies]
 ab_glyph = "0.2.31"

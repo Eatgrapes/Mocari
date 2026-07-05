@@ -264,6 +264,7 @@ impl WindowState {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
             })
             .await?;
         let (device, queue) = adapter
@@ -868,7 +869,7 @@ impl WindowState {
 
         self.window.pre_present_notify();
         self.queue.submit([encoder.finish()]);
-        frame.present();
+        self.queue.present(frame);
         Ok(())
     }
 }
