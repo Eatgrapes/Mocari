@@ -210,7 +210,13 @@ impl Moc3DrawOrderGroups {
         let end = begin.checked_add(group.object_count)?;
         let members = self.objects.get(begin..end)?;
 
-        let bucket_count = (group.max_draw_order - group.base_draw_order).max(0) as usize + 1;
+        if members.is_empty() {
+            return Some(());
+        }
+
+        let draw_order_span =
+            (i64::from(group.max_draw_order) - i64::from(group.base_draw_order)).max(0);
+        let bucket_count = usize::try_from(draw_order_span).ok()?.checked_add(1)?;
         let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); bucket_count];
 
         for (offset, object) in members.iter().enumerate() {
@@ -221,8 +227,9 @@ impl Moc3DrawOrderGroups {
                 part_draw_orders,
                 part_enable,
             )?;
-            let bucket = (effective - group.base_draw_order).clamp(0, bucket_count as i32 - 1);
-            buckets[bucket as usize].push(offset);
+            let relative = i64::from(effective) - i64::from(group.base_draw_order);
+            let bucket = relative.clamp(0, i64::try_from(bucket_count).ok()? - 1);
+            buckets[usize::try_from(bucket).ok()?].push(offset);
         }
 
         let mut rank = start_rank;
@@ -261,5 +268,43 @@ impl Moc3DrawOrderGroups {
         }
 
         Some(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_group_with_inverted_sentinel_draw_order_range_does_not_panic() {
+        let groups = Moc3DrawOrderGroups {
+            groups: vec![
+                Group {
+                    object_begin: 0,
+                    object_count: 1,
+                    subtree_drawable_count: 0,
+                    base_draw_order: 0,
+                    max_draw_order: 0,
+                },
+                Group {
+                    object_begin: 1,
+                    object_count: 0,
+                    subtree_drawable_count: 0,
+                    base_draw_order: i32::MAX,
+                    max_draw_order: -i32::MAX,
+                },
+            ],
+            objects: vec![GroupObject {
+                object_type: OBJECT_TYPE_PART,
+                object_idx: 0,
+                self_group_idx: 1,
+            }],
+            drawable_count: 0,
+        };
+
+        assert_eq!(
+            groups.render_orders(&[], &[0], &[false], &[-1], 0),
+            Some(Vec::new())
+        );
     }
 }

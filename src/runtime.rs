@@ -427,13 +427,13 @@ impl ModelRuntime {
         })
     }
 
+    fn part_drawable_opacity(&self, part_index: usize) -> f32 {
+        self.part_opacity_overrides[part_index].unwrap_or(1.0)
+    }
+
     fn update_part_opacities(&mut self) {
         for index in 0..self.part_opacities.len() {
-            let base = self.part_opacity_overrides[index].unwrap_or_else(|| {
-                self.parts
-                    .interpolate_opacity(index, &self.bindings, &self.parameter_values)
-                    .unwrap_or(1.0)
-            });
+            let base = self.part_drawable_opacity(index);
             self.part_opacities[index] = base * self.pose_opacities[index];
         }
 
@@ -564,4 +564,35 @@ fn initial_pose_opacities(groups: &[PoseGroup], part_count: usize) -> Vec<f32> {
         }
     }
     opacities
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        assets::load_model_runtime,
+        moc3::{Moc3ArtMeshInfo, Moc3ArtMeshes, Moc3OffscreenInfo, Moc3Parts},
+    };
+
+    #[test]
+    fn part_keyform_opacity_does_not_drive_drawable_visibility() {
+        let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+        let runtime = model.runtime_mut();
+        runtime.art_meshes = Moc3ArtMeshes::from_parts(
+            vec![Moc3ArtMeshInfo::new(0, 0, 3, 0, 0, 3, 0, 0)],
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+            vec![0, 1, 2],
+            Vec::new(),
+        )
+        .unwrap();
+        runtime.offscreen = Moc3OffscreenInfo::from_parts(vec![-1], vec![0], vec![-1], Vec::new());
+        runtime.parts =
+            Moc3Parts::from_parts(vec![-1], vec![-1], vec![0], vec![1], vec![0.0], vec![0.0]);
+        runtime.part_opacity_overrides = vec![None];
+        runtime.part_opacities = vec![1.0];
+        runtime.pose_opacities = vec![1.0];
+
+        runtime.update_part_opacities();
+
+        assert_eq!(runtime.drawable_part_opacities(), vec![1.0]);
+    }
 }

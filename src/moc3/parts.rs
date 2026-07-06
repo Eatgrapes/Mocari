@@ -23,6 +23,25 @@ pub struct Moc3Parts {
 }
 
 impl Moc3Parts {
+    #[cfg(test)]
+    pub(crate) fn from_parts(
+        parent_part_indices: Vec<i32>,
+        keyform_binding_band_indices: Vec<i32>,
+        keyform_begin_indices: Vec<i32>,
+        keyform_counts: Vec<i32>,
+        keyform_draw_orders: Vec<f32>,
+        keyform_opacities: Vec<f32>,
+    ) -> Self {
+        Self {
+            parent_part_indices,
+            keyform_binding_band_indices,
+            keyform_begin_indices,
+            keyform_counts,
+            keyform_draw_orders,
+            keyform_opacities,
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;

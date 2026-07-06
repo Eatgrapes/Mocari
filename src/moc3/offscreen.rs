@@ -20,6 +20,21 @@ pub struct Moc3OffscreenInfo {
 }
 
 impl Moc3OffscreenInfo {
+    #[cfg(test)]
+    pub(crate) fn from_parts(
+        part_parent_indices: Vec<i32>,
+        drawable_parent_part_indices: Vec<i32>,
+        part_offscreen_indices: Vec<i32>,
+        offscreen_owner_part_indices: Vec<i32>,
+    ) -> Self {
+        Self {
+            part_parent_indices,
+            drawable_parent_part_indices,
+            part_offscreen_indices,
+            offscreen_owner_part_indices,
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;
