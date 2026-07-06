@@ -84,6 +84,10 @@ impl WgpuTransform {
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
+
+    pub fn update_matrix(&self, queue: &wgpu::Queue, matrix: &Matrix44) {
+        queue.write_buffer(&self.buffer, 0, &encode_wgpu_matrix(matrix));
+    }
 }
 
 #[derive(Debug)]
@@ -100,6 +104,10 @@ impl WgpuMaskParams {
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
+
+    pub fn update_layout(&self, queue: &wgpu::Queue, layout: WgpuClippingLayout) {
+        queue.write_buffer(&self.buffer, 0, &encode_wgpu_mask_params(layout));
+    }
 }
 
 #[derive(Debug)]
@@ -115,6 +123,20 @@ impl WgpuClipParams {
 
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
+    }
+
+    pub fn update_params(
+        &self,
+        queue: &wgpu::Queue,
+        matrix: &Matrix44,
+        channel: WgpuMaskChannel,
+        inverted: bool,
+    ) {
+        queue.write_buffer(
+            &self.buffer,
+            0,
+            &encode_wgpu_clip_params(matrix, channel, inverted),
+        );
     }
 }
 

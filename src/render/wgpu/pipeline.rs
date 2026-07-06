@@ -430,6 +430,59 @@ impl WgpuLive2dRenderer {
         Ok(WgpuClippingResources { contexts })
     }
 
+    pub fn update_clipping_resources(
+        &self,
+        queue: &wgpu::Queue,
+        resources: &mut WgpuClippingResources,
+        plan: &WgpuClippingPlan,
+    ) -> Result<bool, WgpuClippingLayoutError> {
+        if resources.contexts.len() != plan.contexts().len() {
+            return Ok(false);
+        }
+
+        for (context_index, (resource, context)) in resources
+            .contexts
+            .iter_mut()
+            .zip(plan.contexts())
+            .enumerate()
+        {
+            let mask_drawable_indices = context
+                .masks()
+                .iter()
+                .map(|&drawable_index| {
+                    usize::try_from(drawable_index).map_err(|_| {
+                        WgpuClippingLayoutError::InvalidMaskDrawableIndex { drawable_index }
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if resource.mask_drawable_indices != mask_drawable_indices
+                || resource.drawable_indices != context.drawable_indices()
+            {
+                return Ok(false);
+            }
+
+            let layout = context
+                .layout()
+                .ok_or(WgpuClippingLayoutError::MissingLayout { context_index })?;
+            let mask_matrix = context
+                .matrix_for_mask()
+                .ok_or(WgpuClippingLayoutError::MissingMaskMatrix { context_index })?;
+            let draw_matrix = context
+                .matrix_for_draw()
+                .ok_or(WgpuClippingLayoutError::MissingDrawMatrix { context_index })?;
+            resource.mask_transform.update_matrix(queue, &mask_matrix);
+            resource.mask_params.update_layout(queue, layout);
+            resource.clip_params.update_params(
+                queue,
+                &draw_matrix,
+                layout.channel(),
+                context.inverted(),
+            );
+        }
+
+        Ok(true)
+    }
+
     pub fn create_rgba8_texture(
         &self,
         device: &wgpu::Device,

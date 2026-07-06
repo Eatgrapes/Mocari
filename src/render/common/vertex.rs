@@ -67,6 +67,21 @@ pub fn vertices_from_drawable(mesh: &Moc3DrawableMesh) -> Vec<DrawableVertex> {
         .collect()
 }
 
+pub fn encode_vertices_from_drawable(mesh: &Moc3DrawableMesh, bytes: &mut Vec<u8>) {
+    bytes.clear();
+    bytes.reserve(mesh.vertices().len() * DrawableVertex::STRIDE);
+    for vertex in mesh.vertices() {
+        encode_vertex(
+            vertex.position(),
+            vertex.uv(),
+            mesh.opacity(),
+            mesh.multiply_color(),
+            mesh.screen_color(),
+            bytes,
+        );
+    }
+}
+
 pub fn vertex_from_drawable_vertex(
     vertex: &Moc3DrawableVertex,
     opacity: f32,
@@ -79,20 +94,38 @@ pub fn vertex_from_drawable_vertex(
 pub fn encode_vertices(vertices: &[DrawableVertex]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(vertices.len() * DrawableVertex::STRIDE);
     for vertex in vertices {
-        bytes.extend_from_slice(&vertex.position[0].to_ne_bytes());
-        bytes.extend_from_slice(&vertex.position[1].to_ne_bytes());
-        bytes.extend_from_slice(&vertex.uv[0].to_ne_bytes());
-        bytes.extend_from_slice(&vertex.uv[1].to_ne_bytes());
-        bytes.extend_from_slice(&vertex.opacity.to_ne_bytes());
-        for channel in vertex.multiply {
-            bytes.extend_from_slice(&channel.to_ne_bytes());
-        }
-        for channel in vertex.screen {
-            bytes.extend_from_slice(&channel.to_ne_bytes());
-        }
+        encode_vertex(
+            vertex.position,
+            vertex.uv,
+            vertex.opacity,
+            vertex.multiply,
+            vertex.screen,
+            &mut bytes,
+        );
     }
 
     bytes
+}
+
+fn encode_vertex(
+    position: [f32; 2],
+    uv: [f32; 2],
+    opacity: f32,
+    multiply: [f32; 3],
+    screen: [f32; 3],
+    bytes: &mut Vec<u8>,
+) {
+    bytes.extend_from_slice(&position[0].to_ne_bytes());
+    bytes.extend_from_slice(&position[1].to_ne_bytes());
+    bytes.extend_from_slice(&uv[0].to_ne_bytes());
+    bytes.extend_from_slice(&uv[1].to_ne_bytes());
+    bytes.extend_from_slice(&opacity.to_ne_bytes());
+    for channel in multiply {
+        bytes.extend_from_slice(&channel.to_ne_bytes());
+    }
+    for channel in screen {
+        bytes.extend_from_slice(&channel.to_ne_bytes());
+    }
 }
 
 pub fn encode_indices(indices: &[u16]) -> Vec<u8> {

@@ -182,7 +182,7 @@ impl WgpuLive2dRenderer {
         mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
     ) -> Result<u32, WgpuRenderError> {
         let mut drawn = 0;
-        for drawable_index in mesh_buffers.draw_order_indices() {
+        for &drawable_index in mesh_buffers.draw_order_indices() {
             let drawable = mesh_buffers
                 .drawables()
                 .get(drawable_index)
@@ -255,7 +255,7 @@ impl WgpuLive2dRenderer {
         mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
     ) -> Result<u32, WgpuRenderError> {
         let mut drawn = 0;
-        for drawable_index in mesh_buffers.draw_order_indices() {
+        for &drawable_index in mesh_buffers.draw_order_indices() {
             let drawable = mesh_buffers
                 .drawables()
                 .get(drawable_index)

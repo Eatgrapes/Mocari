@@ -268,6 +268,8 @@ struct WindowState {
     slider_fill_buffers: WgpuMeshBuffers,
     slider_track_texture: WgpuTexture,
     slider_fill_texture: WgpuTexture,
+    fps_label: LabelQuad,
+    fps_meter: FpsMeter,
     selected_parameter_index: Option<usize>,
     dragging_parameter_slider: bool,
     cursor_position: Option<PhysicalPosition<f64>>,
@@ -281,6 +283,7 @@ struct LoadedModel {
     expressions: Vec<PathBuf>,
     player: Option<MotionPlayer>,
     expression_manager: ExpressionManager,
+    dirty: bool,
     mesh_buffers: WgpuMeshBuffers,
     textures: Vec<WgpuTexture>,
     clipping_resources: WgpuClippingResources,
@@ -297,6 +300,64 @@ struct LabelQuad {
 struct ButtonUi {
     transform: WgpuTransform,
     label: LabelQuad,
+}
+
+struct FpsMeter {
+    sample_frames: u32,
+    sample_elapsed: f32,
+    total_frames: u64,
+    total_elapsed: f32,
+    last_presented_at: Option<Instant>,
+    label: String,
+}
+
+impl FpsMeter {
+    fn new() -> Self {
+        Self {
+            sample_frames: 0,
+            sample_elapsed: 0.0,
+            total_frames: 0,
+            total_elapsed: 0.0,
+            last_presented_at: None,
+            label: "FPS -- AVG --".to_owned(),
+        }
+    }
+
+    fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn record_present(&mut self, now: Instant) -> Option<String> {
+        let previous = self.last_presented_at.replace(now)?;
+        let delta = now.duration_since(previous).as_secs_f32();
+        if delta <= 0.0 {
+            return None;
+        }
+
+        self.sample_frames += 1;
+        self.sample_elapsed += delta;
+        self.total_frames += 1;
+        self.total_elapsed += delta;
+        if self.sample_elapsed < 0.5 {
+            return None;
+        }
+
+        let fps = self.sample_frames as f32 / self.sample_elapsed;
+        let average = self.total_frames as f32 / self.total_elapsed;
+        self.sample_frames = 0;
+        self.sample_elapsed = 0.0;
+        let label = format!("FPS {:.0} AVG {:.0}", fps, average);
+        if label == self.label {
+            None
+        } else {
+            self.label = label.clone();
+            Some(label)
+        }
+    }
 }
 
 impl WindowState {
@@ -327,6 +388,8 @@ impl WindowState {
         let capabilities = surface.get_capabilities(&adapter);
         config.format = preferred_surface_format(&capabilities.formats)
             .ok_or(ExampleError("surface exposes no texture formats"))?;
+        config.present_mode = preferred_present_mode(&capabilities.present_modes);
+        config.desired_maximum_frame_latency = 3;
         surface.configure(&device, &config);
 
         let renderer = WgpuLive2dRenderer::new(&device, config.format);
@@ -358,6 +421,9 @@ impl WindowState {
             renderer.create_rgba8_texture(&device, &queue, 1, 1, SLIDER_TRACK_RGBA)?;
         let slider_fill_texture =
             renderer.create_rgba8_texture(&device, &queue, 1, 1, SLIDER_FILL_RGBA)?;
+        let fps_meter = FpsMeter::new();
+        let fps_label =
+            create_fps_label_quad(&renderer, &device, &queue, &font, fps_meter.label(), size)?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
@@ -379,6 +445,8 @@ impl WindowState {
             slider_fill_buffers,
             slider_track_texture,
             slider_fill_texture,
+            fps_label,
+            fps_meter,
             selected_parameter_index,
             dragging_parameter_slider: false,
             cursor_position: None,
@@ -403,6 +471,14 @@ impl WindowState {
         self.button_uis =
             create_button_uis(&self.renderer, &self.device, &self.queue, &self.font, size)?;
         self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
+        self.fps_label = create_fps_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            self.fps_meter.label(),
+            size,
+        )?;
         self.refresh_parameter_controls()?;
         Ok(())
     }
@@ -449,6 +525,7 @@ impl WindowState {
         let pick = (self.next_rng() % self.model.motions.len() as u64) as usize;
         let motion = load_motion(&self.model.motions[pick])?;
         self.model.player = Some(MotionPlayer::new(motion));
+        self.model.dirty = true;
         self.last_frame = Instant::now();
         self.window.request_redraw();
         Ok(())
@@ -461,6 +538,7 @@ impl WindowState {
         let pick = (self.next_rng() % self.model.expressions.len() as u64) as usize;
         let expression = load_expression(&self.model.expressions[pick])?;
         self.model.expression_manager.play(expression);
+        self.model.dirty = true;
         self.last_frame = Instant::now();
         self.window.request_redraw();
         Ok(())
@@ -494,6 +572,7 @@ impl WindowState {
         if let Some(default) = self.model.runtime.parameter_default_by_index(index) {
             self.model.runtime.set_parameter_by_index(index, default);
         }
+        self.model.dirty = true;
         self.refresh_parameter_controls()?;
         self.window.request_redraw();
         Ok(())
@@ -507,6 +586,7 @@ impl WindowState {
         self.model
             .runtime
             .set_parameter_override_normalized_by_index(index, value);
+        self.model.dirty = true;
         self.refresh_parameter_controls()?;
         self.window.request_redraw();
         Ok(())
@@ -543,23 +623,13 @@ impl WindowState {
         let delta = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
 
-        self.model.runtime.reset_parameters();
-        self.model.runtime.reset_part_opacities();
-        if let Some(player) = self.model.player.as_mut() {
-            player.tick(delta);
-            player.apply(&mut self.model.runtime);
-            if player.is_finished() {
-                self.model.player = None;
-            }
-        }
-        self.model.expression_manager.tick(delta);
-        self.model.expression_manager.apply(&mut self.model.runtime);
-        self.model.runtime.apply_parameter_overrides();
-        self.model.runtime.apply_pose(delta);
-        if self.model.runtime.update_meshes().is_none() {
-            return Err(Box::new(ExampleError("failed to rebuild model meshes")));
-        }
-        update_model_gpu(&self.renderer, &self.device, &self.queue, &mut self.model)?;
+        advance_model_frame(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &mut self.model,
+            delta,
+        )?;
         Ok(())
     }
 
@@ -578,6 +648,16 @@ impl WindowState {
 
         self.model_index = next_index;
         self.model = model;
+        self.fps_meter.reset();
+        self.fps_label = create_fps_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            self.fps_meter.label(),
+            self.window.inner_size(),
+        )?;
+        self.last_frame = Instant::now();
         self.selected_parameter_index = initial_parameter_selection(&self.model.runtime);
         self.refresh_parameter_controls()?;
         self.window.set_title(&window_title(spec));
@@ -703,11 +783,27 @@ impl WindowState {
                 std::slice::from_ref(&self.parameter_label.texture),
                 &self.ui_transform,
             )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.fps_label.buffers,
+                std::slice::from_ref(&self.fps_label.texture),
+                &self.ui_transform,
+            )?;
         }
 
         self.window.pre_present_notify();
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
+        if let Some(label) = self.fps_meter.record_present(Instant::now()) {
+            self.fps_label = create_fps_label_quad(
+                &self.renderer,
+                &self.device,
+                &self.queue,
+                &self.font,
+                &label,
+                self.window.inner_size(),
+            )?;
+        }
         Ok(())
     }
 }
@@ -722,6 +818,13 @@ fn next_model_index(current: usize, count: usize) -> Option<usize> {
     } else {
         Some((current + 1) % count)
     }
+}
+
+fn preferred_present_mode(supported_modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+    [wgpu::PresentMode::Immediate, wgpu::PresentMode::Mailbox]
+        .into_iter()
+        .find(|mode| supported_modes.contains(mode))
+        .unwrap_or(wgpu::PresentMode::AutoNoVsync)
 }
 
 fn initial_parameter_selection(runtime: &ModelRuntime) -> Option<usize> {
@@ -803,6 +906,7 @@ fn load_rendered_model(
         expressions,
         player: None,
         expression_manager: ExpressionManager::new(),
+        dirty: false,
         mesh_buffers: WgpuMeshBuffers::from_drawables(device, &[])
             .ok_or(ExampleError("failed to create mesh buffers"))?,
         textures,
@@ -847,7 +951,41 @@ fn update_model_gpu(
         return rebuild_model_gpu(renderer, device, model);
     }
 
-    rebuild_model_clipping(renderer, device, model)?;
+    update_model_clipping(renderer, device, queue, model)?;
+    Ok(())
+}
+
+fn advance_model_frame(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    model: &mut LoadedModel,
+    delta: f32,
+) -> Result<(), Box<dyn Error>> {
+    let animating =
+        model.player.is_some() || model.expression_manager.active_expression_count() > 0;
+    if !model.dirty && !animating {
+        return Ok(());
+    }
+
+    model.runtime.reset_parameters();
+    model.runtime.reset_part_opacities();
+    if let Some(player) = model.player.as_mut() {
+        player.tick(delta);
+        player.apply(&mut model.runtime);
+        if player.is_finished() {
+            model.player = None;
+        }
+    }
+    model.expression_manager.tick(delta);
+    model.expression_manager.apply(&mut model.runtime);
+    model.runtime.apply_parameter_overrides();
+    model.runtime.apply_pose(delta);
+    if model.runtime.update_meshes().is_none() {
+        return Err(Box::new(ExampleError("failed to rebuild model meshes")));
+    }
+    update_model_gpu(renderer, device, queue, model)?;
+    model.dirty = false;
     Ok(())
 }
 
@@ -860,6 +998,21 @@ fn rebuild_model_clipping(
     let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(mesh_buffers);
     clipping_plan.prepare_single_texture_masks(mesh_buffers)?;
     model.clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
+    Ok(())
+}
+
+fn update_model_clipping(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    model: &mut LoadedModel,
+) -> Result<(), Box<dyn Error>> {
+    let mesh_buffers = &model.mesh_buffers;
+    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(mesh_buffers);
+    clipping_plan.prepare_single_texture_masks(mesh_buffers)?;
+    if !renderer.update_clipping_resources(queue, &mut model.clipping_resources, &clipping_plan)? {
+        model.clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
+    }
     Ok(())
 }
 
@@ -978,6 +1131,25 @@ fn create_parameter_label_quad(
         surface_size,
         [BUTTON_X, PARAMETER_LABEL_Y],
     )
+}
+
+fn create_fps_label_quad(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    text: &str,
+    surface_size: PhysicalSize<u32>,
+) -> Result<LabelQuad, Box<dyn Error>> {
+    let (width, height, rgba) = rasterize_text(font, text);
+    let texture = renderer.create_rgba8_texture(device, queue, width, height, &rgba)?;
+    let x = (f64::from(surface_size.width) - f64::from(width) - 16.0).max(16.0);
+    let mesh = textured_quad_mesh(surface_size, x, 16.0, f64::from(width), f64::from(height))
+        .ok_or(ExampleError("invalid fps label size"))?;
+    let buffers = WgpuMeshBuffers::from_drawables(device, &[mesh])
+        .ok_or(ExampleError("failed to create fps label buffers"))?;
+
+    Ok(LabelQuad { buffers, texture })
 }
 
 fn create_text_label_quad(

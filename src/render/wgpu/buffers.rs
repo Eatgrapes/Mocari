@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh};
 use crate::render::common::{
     ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices_from, encode_indices,
-    encode_vertices, vertices_from_drawable,
+    encode_vertices, encode_vertices_from_drawable, vertices_from_drawable,
 };
 
 pub fn drawable_vertex_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -111,6 +111,7 @@ impl WgpuDrawableBuffers {
 #[derive(Debug)]
 pub struct WgpuMeshBuffers {
     drawables: Vec<WgpuDrawableBuffers>,
+    draw_order_indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,8 +220,16 @@ impl WgpuMeshBuffers {
         for mesh in meshes {
             drawables.push(create_wgpu_drawable_buffers(device, mesh)?);
         }
+        let draw_order_indices = draw_order_indices_from(
+            drawables.len(),
+            |index| drawables[index].draw_order(),
+            |index| drawables[index].render_order(),
+        );
 
-        Some(Self { drawables })
+        Some(Self {
+            drawables,
+            draw_order_indices,
+        })
     }
 
     pub fn drawables(&self) -> &[WgpuDrawableBuffers] {
@@ -231,12 +240,8 @@ impl WgpuMeshBuffers {
         self.drawables.iter().map(|d| d.info.clone()).collect()
     }
 
-    pub fn draw_order_indices(&self) -> Vec<usize> {
-        draw_order_indices_from(
-            self.drawables.len(),
-            |index| self.drawables[index].draw_order(),
-            |index| self.drawables[index].render_order(),
-        )
+    pub fn draw_order_indices(&self) -> &[usize] {
+        &self.draw_order_indices
     }
 
     pub fn update_drawables(
@@ -255,14 +260,19 @@ impl WgpuMeshBuffers {
             validate_drawable_update(drawable_index, drawable, mesh)?;
         }
 
+        let mut vertex_bytes = Vec::new();
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
-            let vertices = vertices_from_drawable(mesh);
-            let vertex_bytes = encode_vertices(&vertices);
+            encode_vertices_from_drawable(mesh, &mut vertex_bytes);
             if !vertex_bytes.is_empty() {
                 queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
             }
             drawable.info = DrawableInfo::from_mesh(mesh);
         }
+        self.draw_order_indices = draw_order_indices_from(
+            self.drawables.len(),
+            |index| self.drawables[index].draw_order(),
+            |index| self.drawables[index].render_order(),
+        );
 
         Ok(())
     }

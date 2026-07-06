@@ -8,6 +8,6 @@ pub use clipping::{
     MaskChannel, draw_order_indices,
 };
 pub use vertex::{
-    DrawableVertex, encode_indices, encode_vertices, vertex_from_drawable_vertex,
-    vertices_from_drawable,
+    DrawableVertex, encode_indices, encode_vertices, encode_vertices_from_drawable,
+    vertex_from_drawable_vertex, vertices_from_drawable,
 };
