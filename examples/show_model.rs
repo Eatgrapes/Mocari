@@ -973,15 +973,17 @@ fn update_model_gpu(
     queue: &wgpu::Queue,
     model: &mut LoadedModel,
 ) -> Result<(), Box<dyn Error>> {
-    if model
+    let update = match model
         .mesh_buffers
         .update_drawables(queue, model.runtime.meshes())
-        .is_err()
     {
-        return rebuild_model_gpu(renderer, device, model);
-    }
+        Ok(update) => update,
+        Err(_) => return rebuild_model_gpu(renderer, device, model),
+    };
 
-    update_model_clipping(renderer, device, queue, model)?;
+    if update.bounds_changed() {
+        update_model_clipping(renderer, device, queue, model)?;
+    }
     Ok(())
 }
 

@@ -50,6 +50,7 @@ pub struct WgpuDrawableBuffers {
     index_buffer: wgpu::Buffer,
     vertex_count: u32,
     index_count: u32,
+    vertex_bytes: Vec<u8>,
     indices: Vec<u16>,
     info: DrawableInfo,
 }
@@ -112,6 +113,22 @@ impl WgpuDrawableBuffers {
 pub struct WgpuMeshBuffers {
     drawables: Vec<WgpuDrawableBuffers>,
     draw_order_indices: Vec<usize>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct WgpuMeshUpdate {
+    uploaded_drawables: usize,
+    bounds_changed: bool,
+}
+
+impl WgpuMeshUpdate {
+    pub fn uploaded_drawables(&self) -> usize {
+        self.uploaded_drawables
+    }
+
+    pub fn bounds_changed(&self) -> bool {
+        self.bounds_changed
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,7 +265,7 @@ impl WgpuMeshBuffers {
         &mut self,
         queue: &wgpu::Queue,
         meshes: &[Moc3DrawableMesh],
-    ) -> Result<(), WgpuMeshUpdateError> {
+    ) -> Result<WgpuMeshUpdate, WgpuMeshUpdateError> {
         if self.drawables.len() != meshes.len() {
             return Err(WgpuMeshUpdateError::DrawableCount {
                 expected: self.drawables.len(),
@@ -261,12 +278,19 @@ impl WgpuMeshBuffers {
         }
 
         let mut vertex_bytes = Vec::new();
+        let mut uploads = 0;
+        let mut bounds_changed = false;
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
             encode_vertices_from_drawable(mesh, &mut vertex_bytes);
-            if !vertex_bytes.is_empty() {
+            if !vertex_bytes.is_empty() && vertex_bytes != drawable.vertex_bytes {
                 queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
+                drawable.vertex_bytes.clear();
+                drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
+                uploads += 1;
             }
-            drawable.info = DrawableInfo::from_mesh(mesh);
+            let info = DrawableInfo::from_mesh(mesh);
+            bounds_changed |= drawable.info.bounds() != info.bounds();
+            drawable.info = info;
         }
         self.draw_order_indices = draw_order_indices_from(
             self.drawables.len(),
@@ -274,7 +298,10 @@ impl WgpuMeshBuffers {
             |index| self.drawables[index].render_order(),
         );
 
-        Ok(())
+        Ok(WgpuMeshUpdate {
+            uploaded_drawables: uploads,
+            bounds_changed,
+        })
     }
 }
 
@@ -392,6 +419,7 @@ pub fn create_wgpu_drawable_buffers(
         index_buffer,
         vertex_count,
         index_count,
+        vertex_bytes,
         indices: mesh.indices().to_vec(),
         info: DrawableInfo::from_mesh(mesh),
     })

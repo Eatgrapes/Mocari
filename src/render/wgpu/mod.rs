@@ -15,8 +15,8 @@ pub use crate::render::common::{
 };
 
 pub use buffers::{
-    WgpuDrawableBuffers, WgpuMeshBuffers, WgpuMeshUpdateError, create_wgpu_drawable_buffers,
-    drawable_vertex_layout,
+    WgpuDrawableBuffers, WgpuMeshBuffers, WgpuMeshUpdate, WgpuMeshUpdateError,
+    create_wgpu_drawable_buffers, drawable_vertex_layout,
 };
 pub use clipping::{
     WgpuClippingPlan, WgpuClippingResources, WgpuMaskRenderTarget, WgpuPreparedClippingContext,

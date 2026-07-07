@@ -74,6 +74,7 @@ impl WgpuTexture {
 pub struct WgpuTransform {
     buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    bytes: Vec<u8>,
 }
 
 impl WgpuTransform {
@@ -85,8 +86,13 @@ impl WgpuTransform {
         &self.bind_group
     }
 
-    pub fn update_matrix(&self, queue: &wgpu::Queue, matrix: &Matrix44) {
-        queue.write_buffer(&self.buffer, 0, &encode_wgpu_matrix(matrix));
+    pub fn update_matrix(&mut self, queue: &wgpu::Queue, matrix: &Matrix44) -> bool {
+        update_uniform_bytes(
+            queue,
+            &self.buffer,
+            &mut self.bytes,
+            encode_wgpu_matrix(matrix),
+        )
     }
 }
 
@@ -94,6 +100,7 @@ impl WgpuTransform {
 pub struct WgpuMaskParams {
     buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    bytes: Vec<u8>,
 }
 
 impl WgpuMaskParams {
@@ -105,8 +112,13 @@ impl WgpuMaskParams {
         &self.bind_group
     }
 
-    pub fn update_layout(&self, queue: &wgpu::Queue, layout: WgpuClippingLayout) {
-        queue.write_buffer(&self.buffer, 0, &encode_wgpu_mask_params(layout));
+    pub fn update_layout(&mut self, queue: &wgpu::Queue, layout: WgpuClippingLayout) -> bool {
+        update_uniform_bytes(
+            queue,
+            &self.buffer,
+            &mut self.bytes,
+            encode_wgpu_mask_params(layout),
+        )
     }
 }
 
@@ -114,6 +126,7 @@ impl WgpuMaskParams {
 pub struct WgpuClipParams {
     buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    bytes: Vec<u8>,
 }
 
 impl WgpuClipParams {
@@ -126,18 +139,34 @@ impl WgpuClipParams {
     }
 
     pub fn update_params(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         matrix: &Matrix44,
         channel: WgpuMaskChannel,
         inverted: bool,
-    ) {
-        queue.write_buffer(
+    ) -> bool {
+        update_uniform_bytes(
+            queue,
             &self.buffer,
-            0,
-            &encode_wgpu_clip_params(matrix, channel, inverted),
-        );
+            &mut self.bytes,
+            encode_wgpu_clip_params(matrix, channel, inverted),
+        )
     }
+}
+
+fn update_uniform_bytes(
+    queue: &wgpu::Queue,
+    buffer: &wgpu::Buffer,
+    current: &mut Vec<u8>,
+    next: Vec<u8>,
+) -> bool {
+    if *current == next {
+        return false;
+    }
+
+    queue.write_buffer(buffer, 0, &next);
+    *current = next;
+    true
 }
 
 pub fn encode_wgpu_matrix(matrix: &Matrix44) -> Vec<u8> {
@@ -200,7 +229,11 @@ pub(super) fn create_wgpu_mask_params(
         }],
     });
 
-    WgpuMaskParams { buffer, bind_group }
+    WgpuMaskParams {
+        buffer,
+        bind_group,
+        bytes,
+    }
 }
 
 pub(super) fn create_wgpu_clip_params(
@@ -225,7 +258,11 @@ pub(super) fn create_wgpu_clip_params(
         }],
     });
 
-    WgpuClipParams { buffer, bind_group }
+    WgpuClipParams {
+        buffer,
+        bind_group,
+        bytes,
+    }
 }
 
 pub(super) fn create_wgpu_transform(
@@ -248,7 +285,11 @@ pub(super) fn create_wgpu_transform(
         }],
     });
 
-    WgpuTransform { buffer, bind_group }
+    WgpuTransform {
+        buffer,
+        bind_group,
+        bytes: matrix_bytes,
+    }
 }
 
 pub(super) fn rgba8_len(width: u32, height: u32) -> Result<usize, WgpuTextureError> {

@@ -149,6 +149,24 @@ fn creates_mask_params_bind_group() {
 }
 
 #[test]
+fn mask_params_update_skips_unchanged_layout() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let layout = mocari::render::wgpu::WgpuClippingLayout::new(
+        WgpuMaskChannel::Red,
+        WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
+    );
+    let changed = mocari::render::wgpu::WgpuClippingLayout::new(
+        WgpuMaskChannel::Red,
+        WgpuClippingRect::new(0.25, 0.25, 0.5, 0.5),
+    );
+    let mut params = renderer.create_mask_params(&device, layout);
+
+    assert!(!params.update_layout(&queue, layout));
+    assert!(params.update_layout(&queue, changed));
+}
+
+#[test]
 fn encodes_clip_params_from_draw_matrix_and_channel() {
     let mut matrix = Matrix44::identity();
     matrix.scale(0.25, 0.5);
@@ -180,6 +198,19 @@ fn creates_clip_params_bind_group() {
     let _ = params.buffer();
     let _ = params.bind_group();
     let _ = renderer.clip_params_bind_group_layout();
+}
+
+#[test]
+fn clip_params_update_skips_unchanged_params() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let matrix = Matrix44::identity();
+    let mut changed = Matrix44::identity();
+    changed.scale(2.0, 1.0);
+    let mut params = renderer.create_clip_params(&device, &matrix, WgpuMaskChannel::Red, false);
+
+    assert!(!params.update_params(&queue, &matrix, WgpuMaskChannel::Red, false));
+    assert!(params.update_params(&queue, &changed, WgpuMaskChannel::Red, false));
 }
 
 #[test]
@@ -638,10 +669,12 @@ fn mesh_buffers_update_drawables_reuses_topology_and_refreshes_draw_info() {
     );
     let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).unwrap();
 
-    buffers
+    let update = buffers
         .update_drawables(&queue, std::slice::from_ref(&updated))
         .unwrap();
 
+    assert_eq!(update.uploaded_drawables(), 1);
+    assert!(update.bounds_changed());
     let drawable = &buffers.drawables()[0];
     assert_eq!(drawable.index_count(), 3);
     assert_f32_close(drawable.opacity(), 0.25);
@@ -652,6 +685,45 @@ fn mesh_buffers_update_drawables_reuses_topology_and_refreshes_draw_info() {
         WgpuClippingRect::new(-1.0, -1.5, 1.5, 2.0),
     );
     assert_eq!(buffers.draw_order_indices(), vec![0]);
+}
+
+#[test]
+fn mesh_buffers_update_drawables_skips_unchanged_vertex_uploads() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let unchanged = test_mesh_with_render_order(0, 20.0, 1);
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, std::slice::from_ref(&unchanged))
+        .expect("mesh buffers");
+
+    let update = buffers
+        .update_drawables(&queue, std::slice::from_ref(&unchanged))
+        .unwrap();
+
+    assert_eq!(update.uploaded_drawables(), 0);
+    assert!(!update.bounds_changed());
+}
+
+#[test]
+fn mesh_buffers_update_drawables_reports_unchanged_bounds_for_opacity_updates() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let original = test_mesh_with_render_order(0, 20.0, 1);
+    let updated = Moc3DrawableMesh::from_parts_with_render_order(
+        original.texture_index(),
+        original.drawable_flags(),
+        0.25,
+        original.draw_order(),
+        original.render_order(),
+        original.vertices().to_vec(),
+        original.indices().to_vec(),
+        original.masks().to_vec(),
+    );
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).expect("mesh buffers");
+
+    let update = buffers
+        .update_drawables(&queue, std::slice::from_ref(&updated))
+        .unwrap();
+
+    assert_eq!(update.uploaded_drawables(), 1);
+    assert!(!update.bounds_changed());
 }
 
 #[test]
