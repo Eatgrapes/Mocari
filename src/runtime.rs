@@ -5,8 +5,10 @@ use crate::{
     json::{Model3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
-        Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
+        Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3MeshUpdateScratch,
+        Moc3OffscreenInfo, Moc3Parts,
         build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
+        update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
     },
 };
 
@@ -74,6 +76,7 @@ pub struct ModelRuntime {
     pose_fade_time: f32,
     pose_opacities: Vec<f32>,
     meshes: Vec<Moc3DrawableMesh>,
+    mesh_update_scratch: Moc3MeshUpdateScratch,
 }
 
 impl ModelRuntime {
@@ -140,6 +143,7 @@ impl ModelRuntime {
             pose_fade_time,
             pose_opacities,
             meshes: Vec::new(),
+            mesh_update_scratch: Moc3MeshUpdateScratch::default(),
         };
         runtime.update_meshes()?;
         Some(runtime)
@@ -463,16 +467,31 @@ impl ModelRuntime {
     pub fn update_meshes(&mut self) -> Option<()> {
         self.update_part_opacities();
         let drawable_part_opacities = self.drawable_part_opacities();
-        self.meshes = build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
-            &self.art_meshes,
-            &self.art_mesh_keyforms,
-            &self.deformers,
-            &self.bindings,
-            &self.ids,
-            &self.offscreen,
-            &self.parameter_values,
-            &drawable_part_opacities,
-        )?;
+        if self.meshes.len() == self.art_meshes.meshes().len() {
+            update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
+                &mut self.meshes,
+                &mut self.mesh_update_scratch,
+                &self.art_meshes,
+                &self.art_mesh_keyforms,
+                &self.deformers,
+                &self.bindings,
+                &self.ids,
+                &self.offscreen,
+                &self.parameter_values,
+                &drawable_part_opacities,
+            )?;
+        } else {
+            self.meshes = build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
+                &self.art_meshes,
+                &self.art_mesh_keyforms,
+                &self.deformers,
+                &self.bindings,
+                &self.ids,
+                &self.offscreen,
+                &self.parameter_values,
+                &drawable_part_opacities,
+            )?;
+        }
         self.glues
             .apply(&mut self.meshes, &self.bindings, &self.parameter_values)?;
         self.apply_group_render_orders();

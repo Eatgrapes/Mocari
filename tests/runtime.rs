@@ -52,6 +52,32 @@ fn setting_a_parameter_changes_mesh_vertices() {
 }
 
 #[test]
+fn updating_parameters_reuses_runtime_mesh_storage() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let mesh_ptr = model.runtime().meshes().as_ptr();
+    let vertex_ptrs: Vec<_> = model
+        .runtime()
+        .meshes()
+        .iter()
+        .map(|mesh| mesh.vertices().as_ptr())
+        .collect();
+
+    assert!(model.runtime_mut().set_parameter("ParamAngleX", 30.0));
+    model.runtime_mut().update_meshes().unwrap();
+
+    assert_eq!(model.runtime().meshes().as_ptr(), mesh_ptr);
+    assert_eq!(
+        model
+            .runtime()
+            .meshes()
+            .iter()
+            .map(|mesh| mesh.vertices().as_ptr())
+            .collect::<Vec<_>>(),
+        vertex_ptrs
+    );
+}
+
+#[test]
 fn set_parameter_clamps_to_model_range() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let id = "ParamAngleX";

@@ -6,6 +6,11 @@ use super::{
     compose::ComposedDeformers, keyform_bindings::Moc3KeyformSlot,
 };
 
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Moc3MeshUpdateScratch {
+    positions: Vec<Vector2>,
+}
+
 pub fn build_moc3_drawable_meshes_for_default_pose(
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
@@ -115,6 +120,49 @@ pub fn build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
     Some(meshes)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
+    meshes: &mut [Moc3DrawableMesh],
+    scratch: &mut Moc3MeshUpdateScratch,
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    deformers: &Moc3Deformers,
+    bindings: &Moc3KeyformBindings,
+    ids: &Moc3Ids,
+    offscreen: &Moc3OffscreenInfo,
+    parameter_values: &[f32],
+    drawable_part_opacities: &[f32],
+) -> Option<()> {
+    if meshes.len() != art_meshes.meshes().len() {
+        return None;
+    }
+
+    let composed = deformers.compose(bindings, parameter_values)?;
+    for (art_mesh_index, mesh) in meshes.iter_mut().enumerate() {
+        update_moc3_drawable_mesh_for_pose(
+            mesh,
+            scratch,
+            art_meshes,
+            art_mesh_keyforms,
+            &composed,
+            bindings,
+            parameter_values,
+            art_mesh_index,
+        )?;
+    }
+
+    for (drawable_index, part_opacity) in drawable_part_opacities.iter().copied().enumerate() {
+        let mesh = meshes.get_mut(drawable_index)?;
+        mesh.set_opacity(mesh.opacity() * part_opacity);
+    }
+
+    for drawable_index in offscreen.effect_source_drawable_indices(ids) {
+        meshes.get_mut(drawable_index)?.set_opacity(0.0);
+    }
+
+    Some(())
+}
+
 fn build_moc3_drawable_mesh_for_pose(
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
@@ -180,6 +228,63 @@ fn build_moc3_drawable_mesh_for_pose(
     Some(mesh)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn update_moc3_drawable_mesh_for_pose(
+    mesh: &mut Moc3DrawableMesh,
+    scratch: &mut Moc3MeshUpdateScratch,
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    composed: &ComposedDeformers,
+    bindings: &Moc3KeyformBindings,
+    parameter_values: &[f32],
+    art_mesh_index: usize,
+) -> Option<()> {
+    let keyform_count = art_mesh_keyforms.art_mesh_keyforms(art_mesh_index)?.len();
+    let slots = bindings.keyform_slots(
+        art_meshes.art_mesh_keyform_binding_band_index(art_mesh_index)?,
+        keyform_count,
+        parameter_values,
+    )?;
+    let parent_deformer_index = art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?;
+    let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?
+        * composed.deformer_opacity(parent_deformer_index);
+    let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;
+    let multiply_color =
+        interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
+            k.multiply_color()
+        })?;
+    let screen_color =
+        interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
+            k.screen_color()
+        })?;
+    let (parent_multiply_color, parent_screen_color) =
+        composed.deformer_colors(parent_deformer_index);
+    let multiply_color = combine_multiply_color(multiply_color, parent_multiply_color);
+    let screen_color = combine_screen_color(screen_color, parent_screen_color);
+    interpolate_art_mesh_positions_into(
+        art_mesh_keyforms,
+        art_mesh_index,
+        &slots,
+        &mut scratch.positions,
+    )?;
+    composed.transform_vertices(parent_deformer_index, &mut scratch.positions)?;
+
+    if mesh.vertices().len() != scratch.positions.len() {
+        return None;
+    }
+    for (vertex, position) in mesh.vertices_mut().iter_mut().zip(&scratch.positions) {
+        let uv = vertex.uv();
+        *vertex = Moc3DrawableVertex::new([position.x(), -position.y()], uv);
+    }
+
+    mesh.set_opacity(opacity);
+    mesh.set_draw_order(draw_order);
+    mesh.set_render_order(art_meshes.art_mesh_render_order(art_mesh_index)?);
+    mesh.set_multiply_color(multiply_color);
+    mesh.set_screen_color(screen_color);
+    Some(())
+}
+
 fn combine_multiply_color(local: [f32; 3], parent: [f32; 3]) -> [f32; 3] {
     [
         clamp01(local[0] * parent[0]),
@@ -222,8 +327,20 @@ fn interpolate_art_mesh_positions(
     art_mesh_index: usize,
     slots: &[Moc3KeyformSlot],
 ) -> Option<Vec<Vector2>> {
+    let mut out = Vec::new();
+    interpolate_art_mesh_positions_into(keyforms, art_mesh_index, slots, &mut out)?;
+    Some(out)
+}
+
+fn interpolate_art_mesh_positions_into(
+    keyforms: &Moc3ArtMeshKeyforms,
+    art_mesh_index: usize,
+    slots: &[Moc3KeyformSlot],
+    out: &mut Vec<Vector2>,
+) -> Option<()> {
     let first = keyforms.art_mesh_keyform_positions(art_mesh_index, slots.first()?.local_index)?;
-    let mut out = vec![Vector2::default(); first.len().checked_div(2)?];
+    out.clear();
+    out.resize(first.len().checked_div(2)?, Vector2::default());
 
     for slot in slots {
         let positions = keyforms.art_mesh_keyform_positions(art_mesh_index, slot.local_index)?;
@@ -238,7 +355,7 @@ fn interpolate_art_mesh_positions(
         }
     }
 
-    Some(out)
+    Some(())
 }
 
 fn interpolate_art_mesh_opacity(

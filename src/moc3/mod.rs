@@ -30,6 +30,9 @@ pub use header::{Endianness, Moc3Header, Moc3Version};
 pub use ids::Moc3Ids;
 pub use keyform_bindings::Moc3KeyformBindings;
 pub use keyforms::{Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms};
+pub(crate) use mesh_build::{
+    Moc3MeshUpdateScratch, update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
+};
 pub use mesh_build::{
     build_moc3_drawable_meshes_for_default_pose,
     build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,

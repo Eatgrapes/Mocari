@@ -150,6 +150,10 @@ impl Moc3DrawableMesh {
         self.draw_order
     }
 
+    pub(crate) fn set_draw_order(&mut self, draw_order: f32) {
+        self.draw_order = draw_order;
+    }
+
     pub fn render_order(&self) -> i32 {
         self.render_order
     }
