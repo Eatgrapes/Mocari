@@ -291,19 +291,17 @@ impl WgpuMeshBuffers {
         let mut bounds_changed = false;
         let mut visibility_changed = false;
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
+            encode_vertices_from_drawable(mesh, &mut vertex_bytes);
+            if !vertex_bytes.is_empty() && vertex_bytes != drawable.vertex_bytes {
+                queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
+                drawable.vertex_bytes.clear();
+                drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
+                uploads += 1;
+            }
             let was_visible = drawable.is_visible();
             let info = DrawableInfo::from_mesh(mesh);
             let is_visible = !drawable.is_empty() && info.is_visible();
-            if is_visible {
-                encode_vertices_from_drawable(mesh, &mut vertex_bytes);
-                if vertex_bytes != drawable.vertex_bytes {
-                    queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
-                    drawable.vertex_bytes.clear();
-                    drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
-                    uploads += 1;
-                }
-            }
-            bounds_changed |= was_visible && is_visible && drawable.info.bounds() != info.bounds();
+            bounds_changed |= drawable.info.bounds() != info.bounds();
             visibility_changed |= was_visible != is_visible;
             drawable.info = info;
         }

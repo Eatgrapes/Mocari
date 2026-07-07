@@ -748,13 +748,13 @@ fn mesh_buffers_update_drawables_reports_visibility_changes() {
         .update_drawables(&queue, std::slice::from_ref(&updated))
         .unwrap();
 
-    assert_eq!(update.uploaded_drawables(), 0);
+    assert_eq!(update.uploaded_drawables(), 1);
     assert!(!update.bounds_changed());
     assert!(update.visibility_changed());
 }
 
 #[test]
-fn mesh_buffers_update_drawables_skips_hidden_vertex_uploads() {
+fn mesh_buffers_update_drawables_keeps_hidden_vertex_buffers_current() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let original = test_mesh_with_opacity(0, 20.0, 0.0);
     let hidden_update = Moc3DrawableMesh::from_parts_with_render_order(
@@ -787,8 +787,8 @@ fn mesh_buffers_update_drawables_skips_hidden_vertex_uploads() {
         .update_drawables(&queue, std::slice::from_ref(&hidden_update))
         .unwrap();
 
-    assert_eq!(hidden.uploaded_drawables(), 0);
-    assert!(!hidden.bounds_changed());
+    assert_eq!(hidden.uploaded_drawables(), 1);
+    assert!(hidden.bounds_changed());
     assert!(!hidden.visibility_changed());
 
     let visible = buffers
