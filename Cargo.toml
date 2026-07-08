@@ -1,6 +1,6 @@
 [package]
 name = "mocari"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 description = "A pure Rust Live2D/Cubism-compatible runtime"
 license = "MIT"
