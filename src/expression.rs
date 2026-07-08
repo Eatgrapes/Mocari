@@ -256,19 +256,19 @@ impl ExpressionManager {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ExpressionParameterValue {
-    id: String,
+#[derive(Debug)]
+struct ExpressionParameterValue<'a> {
+    id: &'a str,
     parameter_index: usize,
     additive: f32,
     multiply: f32,
     overwrite: f32,
 }
 
-fn expression_parameter_values(
-    players: &[ExpressionPlayer],
+fn expression_parameter_values<'a>(
+    players: &'a [ExpressionPlayer],
     runtime: &ModelRuntime,
-) -> Vec<ExpressionParameterValue> {
+) -> Vec<ExpressionParameterValue<'a>> {
     let mut values = Vec::new();
     for parameter in players
         .iter()
@@ -287,7 +287,7 @@ fn expression_parameter_values(
             continue;
         };
         values.push(ExpressionParameterValue {
-            id: parameter.id().to_owned(),
+            id: parameter.id(),
             parameter_index,
             additive: DEFAULT_ADDITIVE_VALUE,
             multiply: DEFAULT_MULTIPLY_VALUE,
@@ -302,7 +302,7 @@ fn calculate_expression_values(
     player: &ExpressionPlayer,
     expression_index: usize,
     fade_weight: f32,
-    values: &mut [ExpressionParameterValue],
+    values: &mut [ExpressionParameterValue<'_>],
 ) {
     for value in values {
         let current = runtime

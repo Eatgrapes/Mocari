@@ -512,12 +512,10 @@ fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
         return false;
     }
 
-    let mut sorted_left = left.to_vec();
-    let mut sorted_right = right.to_vec();
-    sorted_left.sort_unstable();
-    sorted_right.sort_unstable();
-
-    sorted_left == sorted_right
+    left.iter().all(|mask| {
+        left.iter().filter(|candidate| *candidate == mask).count()
+            == right.iter().filter(|candidate| *candidate == mask).count()
+    })
 }
 
 fn clipping_layout_bounds(layout_index: usize, layout_count: usize) -> ClippingRect {
