@@ -15,6 +15,7 @@ pub struct DrawableInfo {
     draw_order: f32,
     render_order: i32,
     masks: Arc<[i32]>,
+    mask_key: Arc<[i32]>,
     inverted_mask: bool,
     bounds: Option<ClippingRect>,
 }
@@ -22,13 +23,17 @@ pub struct DrawableInfo {
 impl DrawableInfo {
     /// Creates render metadata from a runtime drawable mesh.
     pub fn from_mesh(mesh: &Moc3DrawableMesh) -> Self {
+        let masks = Arc::<[i32]>::from(mesh.masks());
+        let mask_key = sorted_mask_key(&masks);
+
         Self {
             texture_index: mesh.texture_index(),
             blend_mode: mesh.blend_mode(),
             opacity: mesh.opacity(),
             draw_order: mesh.draw_order(),
             render_order: mesh.render_order(),
-            masks: Arc::from(mesh.masks()),
+            masks,
+            mask_key,
             inverted_mask: mesh.is_inverted_mask(),
             bounds: drawable_vertex_bounds(mesh.vertices()),
         }
@@ -78,6 +83,16 @@ impl DrawableInfo {
     pub fn bounds(&self) -> Option<ClippingRect> {
         self.bounds
     }
+}
+
+fn sorted_mask_key(masks: &Arc<[i32]>) -> Arc<[i32]> {
+    if masks.len() <= 1 {
+        return Arc::clone(masks);
+    }
+
+    let mut key = masks.to_vec();
+    key.sort_unstable();
+    Arc::from(key)
 }
 
 /// Returns drawable indices sorted in the order they should be rendered.
@@ -347,6 +362,7 @@ impl std::error::Error for ClippingLayoutError {}
 /// A group of drawables that share the same mask set.
 pub struct ClippingContext {
     masks: Arc<[i32]>,
+    mask_key: Arc<[i32]>,
     inverted: bool,
     drawable_indices: Vec<usize>,
     layout: Option<ClippingLayout>,
@@ -417,12 +433,13 @@ impl ClippingPlan {
 
             if let Some(context) = contexts.iter_mut().find(|context| {
                 context.inverted == drawable.inverted_mask()
-                    && same_mask_set(context.masks(), drawable.masks())
+                    && context.mask_key.as_ref() == drawable.mask_key.as_ref()
             }) {
                 context.drawable_indices.push(drawable_index);
             } else {
                 contexts.push(ClippingContext {
                     masks: Arc::clone(&drawable.masks),
+                    mask_key: Arc::clone(&drawable.mask_key),
                     inverted: drawable.inverted_mask(),
                     drawable_indices: vec![drawable_index],
                     layout: None,
@@ -516,17 +533,6 @@ impl ClippingPlan {
 
         Ok(())
     }
-}
-
-fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    left.iter().all(|mask| {
-        left.iter().filter(|candidate| *candidate == mask).count()
-            == right.iter().filter(|candidate| *candidate == mask).count()
-    })
 }
 
 fn clipping_layout_bounds(layout_index: usize, layout_count: usize) -> ClippingRect {
