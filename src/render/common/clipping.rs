@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::core::{Matrix44, draw_order_from_raw};
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
 
@@ -12,7 +14,7 @@ pub struct DrawableInfo {
     opacity: f32,
     draw_order: f32,
     render_order: i32,
-    masks: Vec<i32>,
+    masks: Arc<[i32]>,
     inverted_mask: bool,
     bounds: Option<ClippingRect>,
 }
@@ -26,7 +28,7 @@ impl DrawableInfo {
             opacity: mesh.opacity(),
             draw_order: mesh.draw_order(),
             render_order: mesh.render_order(),
-            masks: mesh.masks().to_vec(),
+            masks: Arc::from(mesh.masks()),
             inverted_mask: mesh.is_inverted_mask(),
             bounds: drawable_vertex_bounds(mesh.vertices()),
         }
@@ -64,7 +66,7 @@ impl DrawableInfo {
 
     /// Returns drawable indices used as masks for this drawable.
     pub fn masks(&self) -> &[i32] {
-        &self.masks
+        self.masks.as_ref()
     }
 
     /// Returns whether this drawable uses inverted mask semantics.
@@ -344,7 +346,7 @@ impl std::error::Error for ClippingLayoutError {}
 #[derive(Debug, Clone, PartialEq)]
 /// A group of drawables that share the same mask set.
 pub struct ClippingContext {
-    masks: Vec<i32>,
+    masks: Arc<[i32]>,
     inverted: bool,
     drawable_indices: Vec<usize>,
     layout: Option<ClippingLayout>,
@@ -356,7 +358,7 @@ pub struct ClippingContext {
 impl ClippingContext {
     /// Returns drawable indices that act as masks for this context.
     pub fn masks(&self) -> &[i32] {
-        &self.masks
+        self.masks.as_ref()
     }
 
     /// Returns whether this context uses inverted mask semantics.
@@ -415,12 +417,12 @@ impl ClippingPlan {
 
             if let Some(context) = contexts.iter_mut().find(|context| {
                 context.inverted == drawable.inverted_mask()
-                    && same_mask_set(&context.masks, drawable.masks())
+                    && same_mask_set(context.masks(), drawable.masks())
             }) {
                 context.drawable_indices.push(drawable_index);
             } else {
                 contexts.push(ClippingContext {
-                    masks: drawable.masks().to_vec(),
+                    masks: Arc::clone(&drawable.masks),
                     inverted: drawable.inverted_mask(),
                     drawable_indices: vec![drawable_index],
                     layout: None,
