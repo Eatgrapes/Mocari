@@ -2,9 +2,6 @@
 
 A pure Rust Live2D/Cubism runtime experiment
 
-> [!WARNING]
-> This project is still a work in progress.
-
 ## Why
 
 Live2D Cubism Core is closed source. For a long time, developers have mostly had to use **native bindings** to call it from languages like Rust.
