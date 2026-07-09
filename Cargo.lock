@@ -817,7 +817,7 @@ dependencies = [
 
 [[package]]
 name = "mocari"
-version = "0.2.81"
+version = "0.3.0"
 dependencies = [
  "ab_glyph",
  "image",
