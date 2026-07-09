@@ -25,7 +25,6 @@ wgpu = { version = "30.0.0", features = ["noop"], optional = true }
 ab_glyph = "0.2.31"
 pollster = "0.4.0"
 winit = "0.30.13"
-zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [[example]]
 name = "show_model"
