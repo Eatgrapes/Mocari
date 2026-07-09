@@ -105,6 +105,7 @@ impl WgpuPreparedClippingContext {
 #[derive(Debug)]
 pub struct WgpuClippingResources {
     pub(super) contexts: Vec<WgpuPreparedClippingContext>,
+    pub(super) drawable_context_indices: Vec<Option<usize>>,
 }
 
 impl WgpuClippingResources {
@@ -116,8 +117,8 @@ impl WgpuClippingResources {
         &self,
         drawable_index: usize,
     ) -> Option<&WgpuPreparedClippingContext> {
-        self.contexts
-            .iter()
-            .find(|context| context.drawable_indices.contains(&drawable_index))
+        self.drawable_context_indices
+            .get(drawable_index)
+            .and_then(|context_index| context_index.and_then(|index| self.contexts.get(index)))
     }
 }

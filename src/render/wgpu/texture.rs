@@ -65,12 +65,8 @@ impl WgpuTransform {
     }
 
     pub fn update_matrix(&mut self, queue: &wgpu::Queue, matrix: &Matrix44) -> bool {
-        update_uniform_bytes(
-            queue,
-            &self.buffer,
-            &mut self.bytes,
-            encode_wgpu_matrix(matrix),
-        )
+        let next = encode_wgpu_matrix_bytes(matrix);
+        update_uniform_bytes(queue, &self.buffer, &mut self.bytes, &next)
     }
 }
 
@@ -91,12 +87,8 @@ impl WgpuMaskParams {
     }
 
     pub fn update_layout(&mut self, queue: &wgpu::Queue, layout: WgpuClippingLayout) -> bool {
-        update_uniform_bytes(
-            queue,
-            &self.buffer,
-            &mut self.bytes,
-            encode_wgpu_mask_params(layout),
-        )
+        let next = encode_wgpu_mask_param_bytes(layout);
+        update_uniform_bytes(queue, &self.buffer, &mut self.bytes, &next)
     }
 }
 
@@ -123,12 +115,8 @@ impl WgpuClipParams {
         channel: WgpuMaskChannel,
         inverted: bool,
     ) -> bool {
-        update_uniform_bytes(
-            queue,
-            &self.buffer,
-            &mut self.bytes,
-            encode_wgpu_clip_params(matrix, channel, inverted),
-        )
+        let next = encode_wgpu_clip_param_bytes(matrix, channel, inverted);
+        update_uniform_bytes(queue, &self.buffer, &mut self.bytes, &next)
     }
 }
 
@@ -136,41 +124,24 @@ fn update_uniform_bytes(
     queue: &wgpu::Queue,
     buffer: &wgpu::Buffer,
     current: &mut Vec<u8>,
-    next: Vec<u8>,
+    next: &[u8],
 ) -> bool {
-    if *current == next {
+    if current.as_slice() == next {
         return false;
     }
 
-    queue.write_buffer(buffer, 0, &next);
-    *current = next;
+    queue.write_buffer(buffer, 0, next);
+    current.clear();
+    current.extend_from_slice(next);
     true
 }
 
 pub fn encode_wgpu_matrix(matrix: &Matrix44) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(64);
-    for value in matrix.as_slice() {
-        bytes.extend_from_slice(&value.to_ne_bytes());
-    }
-
-    bytes
+    encode_wgpu_matrix_bytes(matrix).to_vec()
 }
 
 pub fn encode_wgpu_mask_params(layout: WgpuClippingLayout) -> Vec<u8> {
-    let bounds = layout.bounds();
-    let base_rect = [
-        bounds.x() * 2.0 - 1.0,
-        bounds.y() * 2.0 - 1.0,
-        (bounds.x() + bounds.width()) * 2.0 - 1.0,
-        (bounds.y() + bounds.height()) * 2.0 - 1.0,
-    ];
-    let mut bytes = Vec::with_capacity(32);
-
-    for value in layout.channel_flag().into_iter().chain(base_rect) {
-        bytes.extend_from_slice(&value.to_ne_bytes());
-    }
-
-    bytes
+    encode_wgpu_mask_param_bytes(layout).to_vec()
 }
 
 pub fn encode_wgpu_clip_params(
@@ -178,13 +149,56 @@ pub fn encode_wgpu_clip_params(
     channel: WgpuMaskChannel,
     inverted: bool,
 ) -> Vec<u8> {
-    let mut bytes = encode_wgpu_matrix(matrix);
-    let inverted_flag = [if inverted { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
-    for value in channel.flag().into_iter().chain(inverted_flag) {
-        bytes.extend_from_slice(&value.to_ne_bytes());
+    encode_wgpu_clip_param_bytes(matrix, channel, inverted).to_vec()
+}
+
+fn encode_wgpu_matrix_bytes(matrix: &Matrix44) -> [u8; 64] {
+    let mut bytes = [0; 64];
+    for (index, &value) in matrix.as_slice().iter().enumerate() {
+        write_f32(&mut bytes, index * 4, value);
+    }
+    bytes
+}
+
+fn encode_wgpu_mask_param_bytes(layout: WgpuClippingLayout) -> [u8; 32] {
+    let bounds = layout.bounds();
+    let base_rect = [
+        bounds.x() * 2.0 - 1.0,
+        bounds.y() * 2.0 - 1.0,
+        (bounds.x() + bounds.width()) * 2.0 - 1.0,
+        (bounds.y() + bounds.height()) * 2.0 - 1.0,
+    ];
+    let mut bytes = [0; 32];
+
+    for (index, value) in layout
+        .channel_flag()
+        .into_iter()
+        .chain(base_rect)
+        .enumerate()
+    {
+        write_f32(&mut bytes, index * 4, value);
     }
 
     bytes
+}
+
+fn encode_wgpu_clip_param_bytes(
+    matrix: &Matrix44,
+    channel: WgpuMaskChannel,
+    inverted: bool,
+) -> [u8; 96] {
+    let mut bytes = [0; 96];
+    bytes[..64].copy_from_slice(&encode_wgpu_matrix_bytes(matrix));
+    let inverted_flag = [if inverted { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
+    for (index, value) in channel.flag().into_iter().chain(inverted_flag).enumerate() {
+        write_f32(&mut bytes, 64 + index * 4, value);
+    }
+
+    bytes
+}
+
+fn write_f32(bytes: &mut [u8], offset: usize, value: f32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
 pub(super) fn create_wgpu_mask_params(

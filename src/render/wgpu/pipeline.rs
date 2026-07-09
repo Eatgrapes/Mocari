@@ -404,6 +404,7 @@ impl WgpuLive2dRenderer {
         plan: &WgpuClippingPlan,
     ) -> Result<WgpuClippingResources, WgpuClippingLayoutError> {
         let mut contexts = Vec::with_capacity(plan.contexts().len());
+        let mut drawable_context_indices = Vec::<Option<usize>>::new();
 
         for (context_index, context) in plan.contexts().iter().enumerate() {
             let layout = context
@@ -441,9 +442,19 @@ impl WgpuLive2dRenderer {
                 mask_params,
                 clip_params,
             });
+
+            for &drawable_index in context.drawable_indices() {
+                if drawable_context_indices.len() <= drawable_index {
+                    drawable_context_indices.resize(drawable_index + 1, None);
+                }
+                drawable_context_indices[drawable_index] = Some(context_index);
+            }
         }
 
-        Ok(WgpuClippingResources { contexts })
+        Ok(WgpuClippingResources {
+            contexts,
+            drawable_context_indices,
+        })
     }
 
     pub fn update_clipping_resources(
