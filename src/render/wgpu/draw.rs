@@ -5,54 +5,24 @@ use super::{
     texture::{WgpuTexture, WgpuTransform},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WgpuRenderError {
-    InvalidTextureIndex {
-        texture_index: i32,
-    },
-    MissingTexture {
-        texture_index: i32,
-    },
-    MissingDrawable {
-        drawable_index: usize,
-    },
-    MissingClippingContext {
-        drawable_index: usize,
-    },
+    #[error("invalid texture index {texture_index}")]
+    InvalidTextureIndex { texture_index: i32 },
+    #[error("missing texture bind group {texture_index}")]
+    MissingTexture { texture_index: i32 },
+    #[error("missing drawable {drawable_index}")]
+    MissingDrawable { drawable_index: usize },
+    #[error("drawable {drawable_index} has clipping masks but no prepared clipping context")]
+    MissingClippingContext { drawable_index: usize },
+    #[error(
+        "drawable {drawable_index} uses {mask_count} clipping masks, but clipping is not implemented"
+    )]
     UnsupportedClippingMasks {
         drawable_index: usize,
         mask_count: usize,
     },
 }
-
-impl std::fmt::Display for WgpuRenderError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidTextureIndex { texture_index } => {
-                write!(formatter, "invalid texture index {texture_index}")
-            }
-            Self::MissingTexture { texture_index } => {
-                write!(formatter, "missing texture bind group {texture_index}")
-            }
-            Self::MissingDrawable { drawable_index } => {
-                write!(formatter, "missing drawable {drawable_index}")
-            }
-            Self::MissingClippingContext { drawable_index } => write!(
-                formatter,
-                "drawable {drawable_index} has clipping masks but no prepared clipping context"
-            ),
-            Self::UnsupportedClippingMasks {
-                drawable_index,
-                mask_count,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} uses {mask_count} clipping masks, but clipping is not implemented"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WgpuRenderError {}
 
 impl WgpuLive2dRenderer {
     pub fn draw(

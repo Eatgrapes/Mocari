@@ -6,7 +6,7 @@
 //! Use [`crate::assets::load_model`] for a static default-pose snapshot.
 
 use std::{
-    fmt, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -95,50 +95,43 @@ impl DecodedTexture {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 /// Errors that can occur while loading a complete model from disk.
 pub enum AssetLoadError {
     /// A referenced file could not be read.
+    #[error("failed to read {path}: {source}")]
     Io {
         /// Path of the file that failed to load.
         path: String,
         /// Original I/O error.
+        #[source]
         source: std::io::Error,
     },
     /// A Cubism JSON file was invalid or unsupported.
-    Json(crate::Error),
+    #[error("failed to parse model json: {0}")]
+    Json(#[source] crate::Error),
     /// The referenced `.moc3` file was invalid or unsupported.
-    Moc3(crate::Error),
+    #[error("failed to parse moc3: {0}")]
+    Moc3(#[source] crate::Error),
     /// A referenced texture could not be decoded.
+    #[error("failed to decode {path}: {source}")]
     Image {
         /// Path of the image that failed to decode.
         path: String,
         /// Original image decoding error.
+        #[source]
         source: image::ImageError,
     },
     /// The supplied model path has no parent directory for resolving assets.
+    #[error("path has no parent: {path}")]
     MissingParent {
         /// Path that did not have a parent directory.
         path: String,
     },
     /// Drawable meshes could not be built from the parsed model data.
+    #[error("failed to build drawable meshes")]
     DrawableMeshes,
 }
-
-impl fmt::Display for AssetLoadError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io { path, source } => write!(formatter, "failed to read {path}: {source}"),
-            Self::Json(error) => write!(formatter, "failed to parse model json: {error}"),
-            Self::Moc3(error) => write!(formatter, "failed to parse moc3: {error}"),
-            Self::Image { path, source } => write!(formatter, "failed to decode {path}: {source}"),
-            Self::MissingParent { path } => write!(formatter, "path has no parent: {path}"),
-            Self::DrawableMeshes => formatter.write_str("failed to build drawable meshes"),
-        }
-    }
-}
-
-impl std::error::Error for AssetLoadError {}
 
 /// Loads a model as a static default-pose snapshot.
 ///

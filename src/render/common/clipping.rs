@@ -302,61 +302,31 @@ impl ClippingLayout {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 /// Errors produced while preparing clipping mask layouts.
 pub enum ClippingLayoutError {
     /// The single-texture layout has more contexts than its RGBA grid supports.
+    #[error("single mask texture supports at most 36 clipping contexts, got {mask_count}")]
     TooManyMasksForSingleTexture { mask_count: usize },
     /// A drawable needed for clipping has no valid bounds.
+    #[error("drawable {drawable_index} has no clipping bounds")]
     MissingDrawableBounds { drawable_index: usize },
     /// A clipping context has not been assigned a layout.
+    #[error("clipping context {context_index} has no layout")]
     MissingLayout { context_index: usize },
     /// A clipping context has no matrix for rendering its mask.
+    #[error("clipping context {context_index} has no mask matrix")]
     MissingMaskMatrix { context_index: usize },
     /// A clipping context has no matrix for drawing clipped meshes.
+    #[error("clipping context {context_index} has no draw matrix")]
     MissingDrawMatrix { context_index: usize },
     /// A mask drawable index did not point to a drawable.
+    #[error("invalid mask drawable index {drawable_index}")]
     InvalidMaskDrawableIndex { drawable_index: i32 },
     /// The clipped drawable bounds collapsed to zero area.
+    #[error("clipping context {context_index} has degenerate clipped bounds")]
     DegenerateClippedBounds { context_index: usize },
 }
-
-impl std::fmt::Display for ClippingLayoutError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TooManyMasksForSingleTexture { mask_count } => write!(
-                formatter,
-                "single mask texture supports at most 36 clipping contexts, got {mask_count}"
-            ),
-            Self::MissingDrawableBounds { drawable_index } => {
-                write!(
-                    formatter,
-                    "drawable {drawable_index} has no clipping bounds"
-                )
-            }
-            Self::MissingLayout { context_index } => {
-                write!(formatter, "clipping context {context_index} has no layout")
-            }
-            Self::MissingMaskMatrix { context_index } => write!(
-                formatter,
-                "clipping context {context_index} has no mask matrix"
-            ),
-            Self::MissingDrawMatrix { context_index } => write!(
-                formatter,
-                "clipping context {context_index} has no draw matrix"
-            ),
-            Self::InvalidMaskDrawableIndex { drawable_index } => {
-                write!(formatter, "invalid mask drawable index {drawable_index}")
-            }
-            Self::DegenerateClippedBounds { context_index } => write!(
-                formatter,
-                "clipping context {context_index} has degenerate clipped bounds"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ClippingLayoutError {}
 
 #[derive(Debug, Clone, PartialEq)]
 /// A group of drawables that share the same mask set.

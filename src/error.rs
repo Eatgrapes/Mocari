@@ -4,14 +4,14 @@
 //! APIs return it directly when model data is malformed or uses an unsupported
 //! format version.
 
-use std::fmt;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 /// Error type used by Mocari parsers and mesh-building helpers.
 pub enum Error {
     /// An id string was empty where Cubism data requires a named item.
+    #[error("id cannot be empty")]
     EmptyId,
     /// A Cubism JSON sidecar file was malformed.
+    #[error("invalid {format}: {message}")]
     InvalidJson {
         /// Human-readable format name, such as `model3.json`.
         format: &'static str,
@@ -19,11 +19,13 @@ pub enum Error {
         message: String,
     },
     /// A `.moc3` file was malformed or internally inconsistent.
+    #[error("invalid moc3: {message}")]
     InvalidMoc3 {
         /// Specific validation failure.
         message: String,
     },
     /// The file version is known but not supported by this crate.
+    #[error("unsupported {format} version {version}")]
     UnsupportedVersion {
         /// Human-readable format name.
         format: &'static str,
@@ -34,20 +36,3 @@ pub enum Error {
 
 /// Result alias used by lower-level Mocari APIs.
 pub type Result<T> = std::result::Result<T, Error>;
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyId => formatter.write_str("id cannot be empty"),
-            Self::InvalidJson { format, message } => {
-                write!(formatter, "invalid {format}: {message}")
-            }
-            Self::InvalidMoc3 { message } => write!(formatter, "invalid moc3: {message}"),
-            Self::UnsupportedVersion { format, version } => {
-                write!(formatter, "unsupported {format} version {version}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}

@@ -4,12 +4,11 @@ use crate::core::Matrix44;
 
 use crate::render::common::{ClippingLayout as WgpuClippingLayout, MaskChannel as WgpuMaskChannel};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WgpuTextureError {
-    InvalidTextureSize {
-        width: u32,
-        height: u32,
-    },
+    #[error("invalid texture size {width}x{height}")]
+    InvalidTextureSize { width: u32, height: u32 },
+    #[error("invalid rgba8 texture length for {width}x{height}: expected {expected}, got {actual}")]
     InvalidRgbaLength {
         width: u32,
         height: u32,
@@ -17,27 +16,6 @@ pub enum WgpuTextureError {
         actual: usize,
     },
 }
-
-impl std::fmt::Display for WgpuTextureError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidTextureSize { width, height } => {
-                write!(formatter, "invalid texture size {width}x{height}")
-            }
-            Self::InvalidRgbaLength {
-                width,
-                height,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "invalid rgba8 texture length for {width}x{height}: expected {expected}, got {actual}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WgpuTextureError {}
 
 #[derive(Debug)]
 pub struct WgpuTexture {

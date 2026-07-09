@@ -1,5 +1,3 @@
-use std::fmt;
-
 use wgpu::util::DeviceExt;
 
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh};
@@ -140,105 +138,45 @@ impl WgpuMeshUpdate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WgpuMeshUpdateError {
-    DrawableCount {
-        expected: usize,
-        actual: usize,
-    },
+    #[error("drawable count changed from {expected} to {actual}")]
+    DrawableCount { expected: usize, actual: usize },
+    #[error("drawable {drawable_index} vertex count changed from {expected} to {actual}")]
     VertexCount {
         drawable_index: usize,
         expected: usize,
         actual: usize,
     },
+    #[error("drawable {drawable_index} index count changed from {expected} to {actual}")]
     IndexCount {
         drawable_index: usize,
         expected: usize,
         actual: usize,
     },
-    Indices {
-        drawable_index: usize,
-    },
+    #[error("drawable {drawable_index} indices changed")]
+    Indices { drawable_index: usize },
+    #[error("drawable {drawable_index} texture index changed from {expected} to {actual}")]
     TextureIndex {
         drawable_index: usize,
         expected: i32,
         actual: i32,
     },
+    #[error("drawable {drawable_index} blend mode changed from {expected:?} to {actual:?}")]
     BlendMode {
         drawable_index: usize,
         expected: Moc3DrawableBlendMode,
         actual: Moc3DrawableBlendMode,
     },
-    Masks {
-        drawable_index: usize,
-    },
+    #[error("drawable {drawable_index} masks changed")]
+    Masks { drawable_index: usize },
+    #[error("drawable {drawable_index} inverted mask changed from {expected} to {actual}")]
     InvertedMask {
         drawable_index: usize,
         expected: bool,
         actual: bool,
     },
 }
-
-impl fmt::Display for WgpuMeshUpdateError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DrawableCount { expected, actual } => {
-                write!(
-                    formatter,
-                    "drawable count changed from {expected} to {actual}"
-                )
-            }
-            Self::VertexCount {
-                drawable_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} vertex count changed from {expected} to {actual}"
-            ),
-            Self::IndexCount {
-                drawable_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} index count changed from {expected} to {actual}"
-            ),
-            Self::Indices { drawable_index } => {
-                write!(formatter, "drawable {drawable_index} indices changed")
-            }
-            Self::TextureIndex {
-                drawable_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} texture index changed from {expected} to {actual}"
-            ),
-            Self::BlendMode {
-                drawable_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} blend mode changed from {expected:?} to {actual:?}"
-            ),
-            Self::Masks { drawable_index } => {
-                write!(formatter, "drawable {drawable_index} masks changed")
-            }
-            Self::InvertedMask {
-                drawable_index,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "drawable {drawable_index} inverted mask changed from {expected} to {actual}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WgpuMeshUpdateError {}
 
 impl WgpuMeshBuffers {
     pub fn from_drawables(device: &wgpu::Device, meshes: &[Moc3DrawableMesh]) -> Option<Self> {

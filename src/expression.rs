@@ -357,27 +357,19 @@ pub fn load_expression(path: impl AsRef<Path>) -> Result<Expression3, Expression
     Expression3::from_json_str(&source).map_err(ExpressionLoadError::Parse)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 /// Errors that can occur while loading an expression file.
 pub enum ExpressionLoadError {
     /// The expression file could not be read.
+    #[error("failed to read {path}: {source}")]
     Io {
         /// Path of the file that failed to load.
         path: String,
         /// Original I/O error.
+        #[source]
         source: std::io::Error,
     },
     /// The expression JSON was invalid or unsupported.
-    Parse(crate::Error),
+    #[error("failed to parse exp3: {0}")]
+    Parse(#[source] crate::Error),
 }
-
-impl std::fmt::Display for ExpressionLoadError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io { path, source } => write!(formatter, "failed to read {path}: {source}"),
-            Self::Parse(error) => write!(formatter, "failed to parse exp3: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for ExpressionLoadError {}
