@@ -62,6 +62,7 @@ This project currently implements:
 - [x] Rendering models correctly
 - [x] Rendering model motions
 - [x] Rendering model expressions
+- [x] Playing tap-triggered hit-area motions
 - [ ] More Cubism runtime features
 
 ## Statement
