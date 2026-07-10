@@ -34,6 +34,8 @@ const NEXT_PARAMETER_BUTTON_Y: f64 = 232.0;
 const RESET_PARAMETER_BUTTON_Y: f64 = 286.0;
 const PARAMETER_LABEL_Y: f64 = 346.0;
 const PARAMETER_SLIDER_Y: f64 = 386.0;
+const MODEL_SCALE_LABEL_Y: f64 = 426.0;
+const MODEL_SCALE_SLIDER_Y: f64 = 466.0;
 const BUTTON_WIDTH: f64 = 168.0;
 const BUTTON_HEIGHT: f64 = 42.0;
 const BUTTON_RGBA: &[u8] = &[46, 65, 78, 235];
@@ -44,6 +46,9 @@ const SLIDER_TRACK_RGBA: &[u8] = &[78, 90, 98, 235];
 const SLIDER_FILL_RGBA: &[u8] = &[76, 149, 208, 245];
 const TEXT_HEIGHT_PX: f32 = 22.0;
 const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
+const MODEL_SCALE_MIN: f32 = 0.5;
+const MODEL_SCALE_MAX: f32 = 2.0;
+const MODEL_SCALE_DEFAULT: f32 = 1.0;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ButtonAction {
@@ -215,6 +220,12 @@ impl ApplicationHandler for ShowModelApp {
                     eprintln!("parameter slider failed: {error}");
                     event_loop.exit();
                 }
+                if state.dragging_model_scale_slider
+                    && let Err(error) = state.update_model_scale_slider(position.x)
+                {
+                    eprintln!("model scale slider failed: {error}");
+                    event_loop.exit();
+                }
             }
             WindowEvent::MouseInput {
                 state: button_state,
@@ -226,6 +237,7 @@ impl ApplicationHandler for ShowModelApp {
                         ElementState::Pressed => state.handle_left_press(),
                         ElementState::Released => {
                             state.dragging_parameter_slider = false;
+                            state.dragging_model_scale_slider = false;
                             Ok(())
                         }
                     };
@@ -271,12 +283,17 @@ struct WindowState {
     parameter_label: LabelQuad,
     slider_track_buffers: WgpuMeshBuffers,
     slider_fill_buffers: WgpuMeshBuffers,
+    model_scale_label: LabelQuad,
+    model_scale_slider_track_buffers: WgpuMeshBuffers,
+    model_scale_slider_fill_buffers: WgpuMeshBuffers,
     slider_track_texture: WgpuTexture,
     slider_fill_texture: WgpuTexture,
     fps_label: LabelQuad,
     fps_meter: FpsMeter,
     selected_parameter_index: Option<usize>,
+    model_scale: f32,
     dragging_parameter_slider: bool,
+    dragging_model_scale_slider: bool,
     cursor_position: Option<PhysicalPosition<f64>>,
     last_frame: Instant,
     rng: u64,
@@ -406,8 +423,15 @@ impl WindowState {
         let renderer = WgpuLive2dRenderer::new(&device, config.format);
         let font = load_font()?;
         let model_index = 0;
-        let model =
-            load_rendered_model(&renderer, &device, &queue, MODEL_SPECS[model_index], size)?;
+        let model_scale = MODEL_SCALE_DEFAULT;
+        let model = load_rendered_model(
+            &renderer,
+            &device,
+            &queue,
+            MODEL_SPECS[model_index],
+            size,
+            model_scale,
+        )?;
         let button_buffers = create_button_quad_buffers(&device, size, SWITCH_BUTTON_Y)?;
         let button_texture = renderer.create_rgba8_texture(&device, &queue, 1, 1, BUTTON_RGBA)?;
         let button_uis = create_button_uis(&renderer, &device, &queue, &font, size)?;
@@ -422,11 +446,22 @@ impl WindowState {
             selected_parameter_index,
             size,
         )?;
-        let slider_track_buffers = create_slider_track_buffers(&device, size)?;
+        let slider_track_buffers = create_slider_track_buffers(&device, size, PARAMETER_SLIDER_Y)?;
         let slider_fill_buffers = create_slider_fill_buffers(
             &device,
             size,
+            PARAMETER_SLIDER_Y,
             selected_parameter_normalized(&model.runtime, selected_parameter_index),
+        )?;
+        let model_scale_label =
+            create_model_scale_label_quad(&renderer, &device, &queue, &font, model_scale, size)?;
+        let model_scale_slider_track_buffers =
+            create_slider_track_buffers(&device, size, MODEL_SCALE_SLIDER_Y)?;
+        let model_scale_slider_fill_buffers = create_slider_fill_buffers(
+            &device,
+            size,
+            MODEL_SCALE_SLIDER_Y,
+            normalized_model_scale(model_scale),
         )?;
         let slider_track_texture =
             renderer.create_rgba8_texture(&device, &queue, 1, 1, SLIDER_TRACK_RGBA)?;
@@ -455,12 +490,17 @@ impl WindowState {
             parameter_label,
             slider_track_buffers,
             slider_fill_buffers,
+            model_scale_label,
+            model_scale_slider_track_buffers,
+            model_scale_slider_fill_buffers,
             slider_track_texture,
             slider_fill_texture,
             fps_label,
             fps_meter,
             selected_parameter_index,
+            model_scale,
             dragging_parameter_slider: false,
+            dragging_model_scale_slider: false,
             cursor_position: None,
             last_frame: now,
             rng: 0x9e37_79b9_7f4a_7c15,
@@ -475,14 +515,14 @@ impl WindowState {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.model.transform = self.renderer.create_transform(
-            &self.device,
-            &fit_model_matrix(self.model.model_bounds, size),
-        );
+        self.update_model_transform();
         self.button_buffers = create_button_quad_buffers(&self.device, size, SWITCH_BUTTON_Y)?;
         self.button_uis =
             create_button_uis(&self.renderer, &self.device, &self.queue, &self.font, size)?;
-        self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
+        self.slider_track_buffers =
+            create_slider_track_buffers(&self.device, size, PARAMETER_SLIDER_Y)?;
+        self.model_scale_slider_track_buffers =
+            create_slider_track_buffers(&self.device, size, MODEL_SCALE_SLIDER_Y)?;
         self.fps_label = create_fps_label_quad(
             &self.renderer,
             &self.device,
@@ -492,6 +532,7 @@ impl WindowState {
             size,
         )?;
         self.refresh_parameter_controls()?;
+        self.refresh_model_scale_controls()?;
         Ok(())
     }
 
@@ -503,9 +544,15 @@ impl WindowState {
             .map(|spec| spec.action)
     }
 
-    fn slider_hit(&self) -> bool {
+    fn parameter_slider_hit(&self) -> bool {
         self.cursor_position
             .map(|position| slider_rect(PARAMETER_SLIDER_Y).contains(position.x, position.y))
+            .unwrap_or(false)
+    }
+
+    fn model_scale_slider_hit(&self) -> bool {
+        self.cursor_position
+            .map(|position| slider_rect(MODEL_SCALE_SLIDER_Y).contains(position.x, position.y))
             .unwrap_or(false)
     }
 
@@ -519,10 +566,16 @@ impl WindowState {
                 ButtonAction::NextParameter => self.select_next_parameter(),
                 ButtonAction::ResetParameter => self.reset_selected_parameter(),
             }
-        } else if self.slider_hit() {
+        } else if self.parameter_slider_hit() {
             self.dragging_parameter_slider = true;
             if let Some(position) = self.cursor_position {
                 self.update_parameter_slider(position.x)?;
+            }
+            Ok(())
+        } else if self.model_scale_slider_hit() {
+            self.dragging_model_scale_slider = true;
+            if let Some(position) = self.cursor_position {
+                self.update_model_scale_slider(position.x)?;
             }
             Ok(())
         } else {
@@ -537,7 +590,11 @@ impl WindowState {
         let Some((model_x, model_y)) = cursor_to_model_position(
             position,
             self.window.inner_size(),
-            fit_model_matrix(self.model.model_bounds, self.window.inner_size()),
+            fit_model_matrix_with_scale(
+                self.model.model_bounds,
+                self.window.inner_size(),
+                self.model_scale,
+            ),
         ) else {
             return Ok(());
         };
@@ -647,6 +704,26 @@ impl WindowState {
         Ok(())
     }
 
+    fn update_model_scale_slider(&mut self, x: f64) -> Result<(), Box<dyn Error>> {
+        let normalized = slider_rect(MODEL_SCALE_SLIDER_Y).normalized_value(x);
+        self.model_scale = model_scale_from_normalized(normalized);
+        self.update_model_transform();
+        self.refresh_model_scale_controls()?;
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn update_model_transform(&mut self) {
+        self.model.transform.update_matrix(
+            &self.queue,
+            &fit_model_matrix_with_scale(
+                self.model.model_bounds,
+                self.window.inner_size(),
+                self.model_scale,
+            ),
+        );
+    }
+
     fn refresh_parameter_controls(&mut self) -> Result<(), Box<dyn Error>> {
         let size = self.window.inner_size();
         self.parameter_label = create_parameter_label_quad(
@@ -661,7 +738,27 @@ impl WindowState {
         self.slider_fill_buffers = create_slider_fill_buffers(
             &self.device,
             size,
+            PARAMETER_SLIDER_Y,
             selected_parameter_normalized(&self.model.runtime, self.selected_parameter_index),
+        )?;
+        Ok(())
+    }
+
+    fn refresh_model_scale_controls(&mut self) -> Result<(), Box<dyn Error>> {
+        let size = self.window.inner_size();
+        self.model_scale_label = create_model_scale_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            self.model_scale,
+            size,
+        )?;
+        self.model_scale_slider_fill_buffers = create_slider_fill_buffers(
+            &self.device,
+            size,
+            MODEL_SCALE_SLIDER_Y,
+            normalized_model_scale(self.model_scale),
         )?;
         Ok(())
     }
@@ -716,6 +813,7 @@ impl WindowState {
             &self.queue,
             spec,
             self.window.inner_size(),
+            self.model_scale,
         )?;
 
         self.model_index = next_index;
@@ -842,6 +940,18 @@ impl WindowState {
                 std::slice::from_ref(&self.slider_fill_texture),
                 &self.ui_transform,
             )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.model_scale_slider_track_buffers,
+                std::slice::from_ref(&self.slider_track_texture),
+                &self.ui_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.model_scale_slider_fill_buffers,
+                std::slice::from_ref(&self.slider_fill_texture),
+                &self.ui_transform,
+            )?;
             for button_ui in &self.button_uis {
                 self.renderer.draw_with_textures_and_transform(
                     &mut pass,
@@ -854,6 +964,12 @@ impl WindowState {
                 &mut pass,
                 &self.parameter_label.buffers,
                 std::slice::from_ref(&self.parameter_label.texture),
+                &self.ui_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.model_scale_label.buffers,
+                std::slice::from_ref(&self.model_scale_label.texture),
                 &self.ui_transform,
             )?;
             self.renderer.draw_with_textures_and_transform(
@@ -959,12 +1075,25 @@ fn parameter_label_text(runtime: &ModelRuntime, index: Option<usize>) -> String 
     )
 }
 
+fn normalized_model_scale(scale: f32) -> f32 {
+    ((scale - MODEL_SCALE_MIN) / (MODEL_SCALE_MAX - MODEL_SCALE_MIN)).clamp(0.0, 1.0)
+}
+
+fn model_scale_from_normalized(normalized: f32) -> f32 {
+    MODEL_SCALE_MIN + normalized.clamp(0.0, 1.0) * (MODEL_SCALE_MAX - MODEL_SCALE_MIN)
+}
+
+fn model_scale_label_text(scale: f32) -> String {
+    format!("Model Size {:.0}%", scale * 100.0)
+}
+
 fn load_rendered_model(
     renderer: &WgpuLive2dRenderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     spec: ModelSpec,
     surface_size: PhysicalSize<u32>,
+    model_scale: f32,
 ) -> Result<LoadedModel, Box<dyn Error>> {
     let loaded = load_model_runtime(spec.path)?;
     let runtime = loaded.runtime().clone();
@@ -994,7 +1123,10 @@ fn load_rendered_model(
             ),
         )?,
         mask_target: renderer.create_mask_render_target(device, MASK_TEXTURE_SIZE)?,
-        transform: renderer.create_transform(device, &fit_model_matrix(model_bounds, surface_size)),
+        transform: renderer.create_transform(
+            device,
+            &fit_model_matrix_with_scale(model_bounds, surface_size, model_scale),
+        ),
         model_bounds,
     };
     rebuild_model_gpu(renderer, device, &mut model)?;
@@ -1221,6 +1353,25 @@ fn create_parameter_label_quad(
     )
 }
 
+fn create_model_scale_label_quad(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    scale: f32,
+    surface_size: PhysicalSize<u32>,
+) -> Result<LabelQuad, Box<dyn Error>> {
+    create_text_label_quad(
+        renderer,
+        device,
+        queue,
+        font,
+        &model_scale_label_text(scale),
+        surface_size,
+        [BUTTON_X, MODEL_SCALE_LABEL_Y],
+    )
+}
+
 fn create_fps_label_quad(
     renderer: &WgpuLive2dRenderer,
     device: &wgpu::Device,
@@ -1398,8 +1549,9 @@ fn create_button_quad_buffers(
 fn create_slider_track_buffers(
     device: &wgpu::Device,
     surface_size: PhysicalSize<u32>,
+    top: f64,
 ) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
-    let slider = slider_rect(PARAMETER_SLIDER_Y);
+    let slider = slider_rect(top);
     create_rect_quad_buffers(
         device,
         surface_size,
@@ -1413,9 +1565,10 @@ fn create_slider_track_buffers(
 fn create_slider_fill_buffers(
     device: &wgpu::Device,
     surface_size: PhysicalSize<u32>,
+    top: f64,
     normalized: f32,
 ) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
-    let slider = slider_rect(PARAMETER_SLIDER_Y);
+    let slider = slider_rect(top);
     let width = (slider.width * f64::from(normalized.clamp(0.0, 1.0))).max(1.0);
     create_rect_quad_buffers(
         device,
@@ -1544,10 +1697,15 @@ impl ModelBounds {
     }
 }
 
-fn fit_model_matrix(bounds: ModelBounds, surface_size: PhysicalSize<u32>) -> Matrix44 {
+fn fit_model_matrix_with_scale(
+    bounds: ModelBounds,
+    surface_size: PhysicalSize<u32>,
+    model_scale: f32,
+) -> Matrix44 {
     let aspect = surface_size.width as f32 / surface_size.height as f32;
-    let fit_x = MODEL_VIEW_FILL / (bounds.width() * aspect);
-    let fit_y = MODEL_VIEW_FILL / bounds.height();
+    let view_fill = MODEL_VIEW_FILL * model_scale.clamp(MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+    let fit_x = view_fill / (bounds.width() * aspect);
+    let fit_y = view_fill / bounds.height();
     let scale_y = fit_x.min(fit_y);
     let scale_x = scale_y / aspect;
 
@@ -1598,7 +1756,8 @@ mod tests {
             max_y: 3.0,
         };
 
-        let matrix = fit_model_matrix(bounds, PhysicalSize::new(100, 100));
+        let matrix =
+            fit_model_matrix_with_scale(bounds, PhysicalSize::new(100, 100), MODEL_SCALE_DEFAULT);
 
         assert_close(matrix.transform_x(bounds.center_x()), 0.0);
         assert_close(matrix.transform_y(bounds.center_y()), 0.0);
@@ -1617,9 +1776,35 @@ mod tests {
             max_y: 1.0,
         };
 
-        let matrix = fit_model_matrix(bounds, PhysicalSize::new(200, 100));
+        let matrix =
+            fit_model_matrix_with_scale(bounds, PhysicalSize::new(200, 100), MODEL_SCALE_DEFAULT);
 
         assert_close(matrix.scale_x() * 200.0, matrix.scale_y() * 100.0);
+    }
+
+    #[test]
+    fn model_scale_normalization_round_trips() {
+        assert_close(normalized_model_scale(MODEL_SCALE_MIN), 0.0);
+        assert_close(normalized_model_scale(MODEL_SCALE_DEFAULT), 1.0 / 3.0);
+        assert_close(normalized_model_scale(MODEL_SCALE_MAX), 1.0);
+        assert_close(model_scale_from_normalized(0.0), MODEL_SCALE_MIN);
+        assert_close(model_scale_from_normalized(1.0), MODEL_SCALE_MAX);
+    }
+
+    #[test]
+    fn fit_model_matrix_applies_model_scale() {
+        let bounds = ModelBounds {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+
+        let normal = fit_model_matrix_with_scale(bounds, PhysicalSize::new(100, 100), 1.0);
+        let large = fit_model_matrix_with_scale(bounds, PhysicalSize::new(100, 100), 2.0);
+
+        assert_close(large.scale_x(), normal.scale_x() * 2.0);
+        assert_close(large.scale_y(), normal.scale_y() * 2.0);
     }
 
     #[test]
@@ -1631,7 +1816,7 @@ mod tests {
             max_y: 3.0,
         };
         let size = PhysicalSize::new(100, 100);
-        let matrix = fit_model_matrix(bounds, size);
+        let matrix = fit_model_matrix_with_scale(bounds, size, MODEL_SCALE_DEFAULT);
         let center = cursor_to_model_position(PhysicalPosition::new(50.0, 50.0), size, matrix)
             .expect("valid surface size");
 
