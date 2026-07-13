@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::json::{Physics3, PhysicsValueKind};
+
 use super::math::{Vector2, degrees_to_radian, direction_to_radian, radian_to_direction};
 
 const MAXIMUM_WEIGHT: f32 = 100.0;
@@ -344,5 +348,565 @@ fn normalize(value: Vector2) -> Vector2 {
         value
     } else {
         div(value, length)
+    }
+}
+
+const AIR_RESISTANCE: f32 = 5.0;
+const MAXIMUM_DELTA_TIME: f32 = 5.0;
+const MOVEMENT_THRESHOLD: f32 = 0.001;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PhysicsOptions {
+    gravity: Vector2,
+    wind: Vector2,
+}
+
+impl PhysicsOptions {
+    pub fn new(gravity: Vector2, wind: Vector2) -> Self {
+        Self { gravity, wind }
+    }
+
+    pub fn gravity(&self) -> Vector2 {
+        self.gravity
+    }
+
+    pub fn wind(&self) -> Vector2 {
+        self.wind
+    }
+}
+
+impl Default for PhysicsOptions {
+    fn default() -> Self {
+        Self::new(Vector2::new(0.0, -1.0), Vector2::new(0.0, 0.0))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RuntimePhysicsInput {
+    parameter_index: Option<usize>,
+    kind: PhysicsValueKind,
+    reflect: bool,
+    weight: f32,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimePhysicsOutput {
+    parameter_index: Option<usize>,
+    particle_index: usize,
+    scale: f32,
+    weight: f32,
+    kind: PhysicsValueKind,
+    reflect: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimePhysicsSetting {
+    inputs: Vec<RuntimePhysicsInput>,
+    outputs: Vec<RuntimePhysicsOutput>,
+    particles: Vec<PhysicsParticle>,
+    position_normalization: PhysicsRange,
+    angle_normalization: PhysicsRange,
+    current_outputs: Vec<f32>,
+    previous_outputs: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PhysicsRuntime {
+    settings: Vec<RuntimePhysicsSetting>,
+    options: PhysicsOptions,
+    current_remain_time: f32,
+    parameter_cache: Vec<f32>,
+    parameter_input_cache: Vec<f32>,
+    fps: f32,
+}
+
+impl PhysicsRuntime {
+    pub fn new(physics: &Physics3, parameter_ids: &[String]) -> Self {
+        let parameter_indices = parameter_ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.as_str(), index))
+            .collect::<HashMap<_, _>>();
+        let settings = physics
+            .settings()
+            .iter()
+            .map(|setting| {
+                let inputs = setting
+                    .inputs()
+                    .iter()
+                    .map(|input| RuntimePhysicsInput {
+                        parameter_index: parameter_indices.get(input.source().id()).copied(),
+                        kind: input.kind(),
+                        reflect: input.reflect(),
+                        weight: input.weight(),
+                    })
+                    .collect();
+                let outputs = setting
+                    .outputs()
+                    .iter()
+                    .map(|output| RuntimePhysicsOutput {
+                        parameter_index: parameter_indices.get(output.destination().id()).copied(),
+                        particle_index: output.vertex_index() as usize,
+                        scale: output.scale(),
+                        weight: output.weight(),
+                        kind: output.kind(),
+                        reflect: output.reflect(),
+                    })
+                    .collect::<Vec<_>>();
+                let particles = particles_from_vertices(setting.vertices());
+
+                RuntimePhysicsSetting {
+                    inputs,
+                    current_outputs: vec![0.0; outputs.len()],
+                    previous_outputs: vec![0.0; outputs.len()],
+                    outputs,
+                    particles,
+                    position_normalization: physics_range(setting.normalization().position()),
+                    angle_normalization: physics_range(setting.normalization().angle()),
+                }
+            })
+            .collect();
+
+        Self {
+            settings,
+            options: PhysicsOptions::default(),
+            current_remain_time: 0.0,
+            parameter_cache: Vec::new(),
+            parameter_input_cache: Vec::new(),
+            fps: physics.meta().fps(),
+        }
+    }
+
+    pub fn options(&self) -> PhysicsOptions {
+        self.options
+    }
+
+    pub fn set_options(&mut self, options: PhysicsOptions) {
+        self.options = options;
+    }
+
+    pub fn reset(&mut self) {
+        self.options = PhysicsOptions::default();
+        self.current_remain_time = 0.0;
+        self.parameter_cache.clear();
+        self.parameter_input_cache.clear();
+        for setting in &mut self.settings {
+            setting.particles = reset_particles(&setting.particles);
+            setting.current_outputs.fill(0.0);
+            setting.previous_outputs.fill(0.0);
+        }
+    }
+
+    pub fn evaluate(
+        &mut self,
+        parameter_values: &mut [f32],
+        parameter_minimum_values: &[f32],
+        parameter_maximum_values: &[f32],
+        parameter_default_values: &[f32],
+        delta_time_seconds: f32,
+    ) {
+        if delta_time_seconds <= 0.0 || !delta_time_seconds.is_finite() {
+            return;
+        }
+
+        let parameter_count = parameter_values.len();
+        if parameter_minimum_values.len() != parameter_count
+            || parameter_maximum_values.len() != parameter_count
+            || parameter_default_values.len() != parameter_count
+        {
+            return;
+        }
+
+        self.current_remain_time += delta_time_seconds;
+        if self.current_remain_time > MAXIMUM_DELTA_TIME {
+            self.current_remain_time = 0.0;
+        }
+
+        if self.parameter_cache.len() != parameter_count {
+            self.parameter_cache.resize(parameter_count, 0.0);
+        }
+        if self.parameter_input_cache.len() != parameter_count {
+            self.parameter_input_cache.clear();
+            self.parameter_input_cache
+                .extend_from_slice(parameter_values);
+        }
+
+        let physics_delta_time = if self.fps > 0.0 && self.fps.is_finite() {
+            1.0 / self.fps
+        } else {
+            delta_time_seconds
+        };
+        if !physics_delta_time.is_finite() || physics_delta_time <= 0.0 {
+            return;
+        }
+
+        while self.current_remain_time >= physics_delta_time {
+            let input_weight = physics_delta_time / self.current_remain_time;
+            for (index, &parameter_value) in parameter_values.iter().enumerate() {
+                self.parameter_cache[index] = self.parameter_input_cache[index]
+                    * (1.0 - input_weight)
+                    + parameter_value * input_weight;
+                self.parameter_input_cache[index] = self.parameter_cache[index];
+            }
+
+            for setting in &mut self.settings {
+                setting
+                    .previous_outputs
+                    .copy_from_slice(&setting.current_outputs);
+                evaluate_setting(
+                    setting,
+                    &mut self.parameter_cache,
+                    parameter_minimum_values,
+                    parameter_maximum_values,
+                    parameter_default_values,
+                    self.options,
+                    physics_delta_time,
+                );
+            }
+
+            self.current_remain_time -= physics_delta_time;
+        }
+
+        let alpha = self.current_remain_time / physics_delta_time;
+        for setting in &self.settings {
+            for (output, (&previous, &current)) in setting.outputs.iter().zip(
+                setting
+                    .previous_outputs
+                    .iter()
+                    .zip(&setting.current_outputs),
+            ) {
+                let Some(parameter_index) = output.parameter_index else {
+                    continue;
+                };
+                let Some(value) = parameter_values.get_mut(parameter_index) else {
+                    continue;
+                };
+                let Some((&minimum, &maximum)) = parameter_minimum_values
+                    .get(parameter_index)
+                    .zip(parameter_maximum_values.get(parameter_index))
+                else {
+                    continue;
+                };
+                update_output_parameter(
+                    value,
+                    minimum,
+                    maximum,
+                    previous * (1.0 - alpha) + current * alpha,
+                    output,
+                );
+            }
+        }
+    }
+
+    pub fn stabilize(
+        &mut self,
+        parameter_values: &mut [f32],
+        parameter_minimum_values: &[f32],
+        parameter_maximum_values: &[f32],
+        parameter_default_values: &[f32],
+    ) {
+        let parameter_count = parameter_values.len();
+        if parameter_minimum_values.len() != parameter_count
+            || parameter_maximum_values.len() != parameter_count
+            || parameter_default_values.len() != parameter_count
+        {
+            return;
+        }
+
+        for setting in &mut self.settings {
+            stabilize_setting(
+                setting,
+                parameter_values,
+                parameter_minimum_values,
+                parameter_maximum_values,
+                parameter_default_values,
+                self.options,
+            );
+        }
+    }
+}
+
+fn evaluate_setting(
+    setting: &mut RuntimePhysicsSetting,
+    parameter_cache: &mut [f32],
+    parameter_minimum_values: &[f32],
+    parameter_maximum_values: &[f32],
+    parameter_default_values: &[f32],
+    options: PhysicsOptions,
+    delta_time_seconds: f32,
+) {
+    let input = accumulate_inputs(
+        setting,
+        parameter_cache,
+        parameter_minimum_values,
+        parameter_maximum_values,
+        parameter_default_values,
+    );
+
+    let radian = degrees_to_radian(-input.angle());
+    let mut translation = Vector2::new(input.translation_x(), input.translation_y());
+    let translation_x = translation.x() * radian.cos() - translation.y() * radian.sin();
+    translation = Vector2::new(
+        translation_x,
+        translation_x * radian.sin() + translation.y() * radian.cos(),
+    );
+    update_physics_particles(
+        &mut setting.particles,
+        translation,
+        input.angle(),
+        options.wind(),
+        MOVEMENT_THRESHOLD * setting.position_normalization.maximum(),
+        delta_time_seconds,
+        AIR_RESISTANCE,
+    );
+
+    for (index, output) in setting.outputs.iter().enumerate() {
+        let Some((current, previous)) = setting.particles.get(output.particle_index).zip(
+            output
+                .particle_index
+                .checked_sub(1)
+                .and_then(|index| setting.particles.get(index)),
+        ) else {
+            continue;
+        };
+        let translation = sub(current.position(), previous.position());
+        let value = match output.kind {
+            PhysicsValueKind::X => physics_output_translation_x(translation, output.reflect),
+            PhysicsValueKind::Y => physics_output_translation_y(translation, output.reflect),
+            PhysicsValueKind::Angle => {
+                let Some(parent_gravity) = parent_gravity_for_particles(
+                    &setting.particles,
+                    output.particle_index,
+                    options.gravity(),
+                ) else {
+                    continue;
+                };
+                physics_output_angle_with_parent_gravity(
+                    translation,
+                    parent_gravity,
+                    output.reflect,
+                )
+            }
+        };
+        setting.current_outputs[index] = value;
+
+        let Some(parameter_index) = output.parameter_index else {
+            continue;
+        };
+        let Some((value, (&minimum, &maximum))) = parameter_cache.get_mut(parameter_index).zip(
+            parameter_minimum_values
+                .get(parameter_index)
+                .zip(parameter_maximum_values.get(parameter_index)),
+        ) else {
+            continue;
+        };
+        update_output_parameter(value, minimum, maximum, *value, output);
+    }
+}
+
+fn stabilize_setting(
+    setting: &mut RuntimePhysicsSetting,
+    parameter_values: &mut [f32],
+    parameter_minimum_values: &[f32],
+    parameter_maximum_values: &[f32],
+    parameter_default_values: &[f32],
+    options: PhysicsOptions,
+) {
+    let input = accumulate_inputs(
+        setting,
+        parameter_values,
+        parameter_minimum_values,
+        parameter_maximum_values,
+        parameter_default_values,
+    );
+    let radian = degrees_to_radian(-input.angle());
+    let mut translation = Vector2::new(input.translation_x(), input.translation_y());
+    let translation_x = translation.x() * radian.cos() - translation.y() * radian.sin();
+    translation = Vector2::new(
+        translation_x,
+        translation_x * radian.sin() + translation.y() * radian.cos(),
+    );
+    stabilize_physics_particles(
+        &mut setting.particles,
+        translation,
+        input.angle(),
+        options.wind(),
+        MOVEMENT_THRESHOLD * setting.position_normalization.maximum(),
+    );
+
+    for output in &setting.outputs {
+        let Some((current, previous)) = setting.particles.get(output.particle_index).zip(
+            output
+                .particle_index
+                .checked_sub(1)
+                .and_then(|index| setting.particles.get(index)),
+        ) else {
+            continue;
+        };
+        let translation = sub(current.position(), previous.position());
+        let value = match output.kind {
+            PhysicsValueKind::X => physics_output_translation_x(translation, output.reflect),
+            PhysicsValueKind::Y => physics_output_translation_y(translation, output.reflect),
+            PhysicsValueKind::Angle => {
+                let Some(parent_gravity) = parent_gravity_for_particles(
+                    &setting.particles,
+                    output.particle_index,
+                    options.gravity(),
+                ) else {
+                    continue;
+                };
+                physics_output_angle_with_parent_gravity(
+                    translation,
+                    parent_gravity,
+                    output.reflect,
+                )
+            }
+        };
+        let Some(parameter_index) = output.parameter_index else {
+            continue;
+        };
+        let Some((parameter_value, (&minimum, &maximum))) =
+            parameter_values.get_mut(parameter_index).zip(
+                parameter_minimum_values
+                    .get(parameter_index)
+                    .zip(parameter_maximum_values.get(parameter_index)),
+            )
+        else {
+            continue;
+        };
+        update_output_parameter(parameter_value, minimum, maximum, value, output);
+    }
+}
+
+fn accumulate_inputs(
+    setting: &RuntimePhysicsSetting,
+    parameter_values: &[f32],
+    parameter_minimum_values: &[f32],
+    parameter_maximum_values: &[f32],
+    parameter_default_values: &[f32],
+) -> PhysicsInputAccumulator {
+    let mut input = PhysicsInputAccumulator::default();
+    for source in &setting.inputs {
+        let Some(parameter_index) = source.parameter_index else {
+            continue;
+        };
+        let Some(((&value, &minimum), (&maximum, &default))) = parameter_values
+            .get(parameter_index)
+            .zip(parameter_minimum_values.get(parameter_index))
+            .zip(
+                parameter_maximum_values
+                    .get(parameter_index)
+                    .zip(parameter_default_values.get(parameter_index)),
+            )
+        else {
+            continue;
+        };
+        let parameter = PhysicsRange::new(minimum, maximum, default);
+        match source.kind {
+            PhysicsValueKind::X => input.add_translation_x(
+                value,
+                parameter,
+                setting.position_normalization,
+                source.reflect,
+                source.weight,
+            ),
+            PhysicsValueKind::Y => input.add_translation_y(
+                value,
+                parameter,
+                setting.position_normalization,
+                source.reflect,
+                source.weight,
+            ),
+            PhysicsValueKind::Angle => input.add_angle(
+                value,
+                parameter,
+                setting.angle_normalization,
+                source.reflect,
+                source.weight,
+            ),
+        }
+    }
+    input
+}
+
+fn update_output_parameter(
+    parameter_value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    translation: f32,
+    output: &RuntimePhysicsOutput,
+) {
+    let value = (translation * output.scale).clamp(minimum, maximum);
+    let weight = output.weight / MAXIMUM_WEIGHT;
+    *parameter_value = if weight >= 1.0 {
+        value
+    } else {
+        *parameter_value * (1.0 - weight) + value * weight
+    };
+}
+
+fn physics_range(value: &crate::json::PhysicsNormalizationValue) -> PhysicsRange {
+    PhysicsRange::new(value.minimum(), value.maximum(), value.default())
+}
+
+fn particles_from_vertices(vertices: &[crate::json::PhysicsVertex]) -> Vec<PhysicsParticle> {
+    let mut position = Vector2::new(0.0, 0.0);
+    vertices
+        .iter()
+        .enumerate()
+        .map(|(index, vertex)| {
+            if index != 0 {
+                position = add(position, Vector2::new(0.0, vertex.radius()));
+            }
+            PhysicsParticle::new(
+                position,
+                position,
+                Vector2::new(0.0, 0.0),
+                Vector2::new(0.0, 0.0),
+                Vector2::new(0.0, 1.0),
+                vertex.mobility(),
+                vertex.delay(),
+                vertex.acceleration(),
+                vertex.radius(),
+            )
+        })
+        .collect()
+}
+
+fn reset_particles(particles: &[PhysicsParticle]) -> Vec<PhysicsParticle> {
+    let mut position = Vector2::new(0.0, 0.0);
+    particles
+        .iter()
+        .enumerate()
+        .map(|(index, particle)| {
+            if index != 0 {
+                position = add(position, Vector2::new(0.0, particle.radius));
+            }
+            PhysicsParticle::new(
+                position,
+                position,
+                Vector2::new(0.0, 0.0),
+                Vector2::new(0.0, 0.0),
+                Vector2::new(0.0, 1.0),
+                particle.mobility,
+                particle.delay,
+                particle.acceleration,
+                particle.radius,
+            )
+        })
+        .collect()
+}
+
+fn parent_gravity_for_particles(
+    particles: &[PhysicsParticle],
+    particle_index: usize,
+    parent_gravity: Vector2,
+) -> Option<Vector2> {
+    if particle_index >= 2 {
+        let current = particles.get(particle_index - 1)?;
+        let previous = particles.get(particle_index - 2)?;
+        Some(sub(current.position(), previous.position()))
+    } else {
+        Some(Vector2::new(-parent_gravity.x(), -parent_gravity.y()))
     }
 }

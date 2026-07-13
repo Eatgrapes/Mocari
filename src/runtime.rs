@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    core::{clamp_parameter_value, draw_order_from_raw},
-    json::{Model3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
+    core::{PhysicsOptions, PhysicsRuntime, clamp_parameter_value, draw_order_from_raw},
+    json::{Model3, Physics3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
         Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3MeshUpdateScratch,
@@ -128,6 +128,7 @@ pub struct ModelRuntime {
     parameter_index: HashMap<String, usize>,
     parameter_values: Vec<f32>,
     parameter_overrides: Vec<Option<f32>>,
+    physics: Option<PhysicsRuntime>,
     part_index: HashMap<String, usize>,
     part_opacity_overrides: Vec<Option<f32>>,
     part_opacities: Vec<f32>,
@@ -191,6 +192,7 @@ impl ModelRuntime {
             parameter_index,
             parameter_values,
             parameter_overrides,
+            physics: None,
             part_index,
             part_opacity_overrides: vec![None; part_count],
             part_opacities: vec![1.0; part_count],
@@ -470,6 +472,65 @@ impl ModelRuntime {
     pub fn reset_parameters(&mut self) {
         self.parameter_values
             .copy_from_slice(self.bindings.parameter_default_values());
+    }
+
+    pub fn set_physics(&mut self, physics: Physics3) {
+        self.physics = Some(PhysicsRuntime::new(&physics, self.ids.parameters()));
+    }
+
+    pub fn clear_physics(&mut self) {
+        self.physics = None;
+    }
+
+    pub fn physics(&self) -> Option<&PhysicsRuntime> {
+        self.physics.as_ref()
+    }
+
+    pub fn physics_options(&self) -> Option<PhysicsOptions> {
+        self.physics.as_ref().map(PhysicsRuntime::options)
+    }
+
+    pub fn set_physics_options(&mut self, options: PhysicsOptions) -> bool {
+        let Some(physics) = &mut self.physics else {
+            return false;
+        };
+        physics.set_options(options);
+        true
+    }
+
+    pub fn reset_physics(&mut self) -> bool {
+        let Some(physics) = &mut self.physics else {
+            return false;
+        };
+        physics.reset();
+        true
+    }
+
+    pub fn stabilize_physics(&mut self) -> bool {
+        let Some(physics) = &mut self.physics else {
+            return false;
+        };
+        physics.stabilize(
+            &mut self.parameter_values,
+            self.bindings.parameter_min_values(),
+            self.bindings.parameter_max_values(),
+            self.bindings.parameter_default_values(),
+        );
+        true
+    }
+
+    pub fn apply_physics(&mut self, delta_time_seconds: f32) -> bool {
+        let Some(physics) = &mut self.physics else {
+            return false;
+        };
+        physics.evaluate(
+            &mut self.parameter_values,
+            self.bindings.parameter_min_values(),
+            self.bindings.parameter_max_values(),
+            self.bindings.parameter_default_values(),
+            delta_time_seconds,
+        );
+        true
     }
 
     /// Returns all part ids in model order.

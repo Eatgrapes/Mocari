@@ -67,6 +67,8 @@ pub struct PhysicsMeta {
     total_output_count: u32,
     #[serde(rename = "VertexCount")]
     vertex_count: u32,
+    #[serde(rename = "Fps", default)]
+    fps: f32,
     #[serde(rename = "EffectiveForces")]
     effective_forces: EffectiveForces,
     #[serde(rename = "PhysicsDictionary", default)]
@@ -88,6 +90,10 @@ impl PhysicsMeta {
 
     pub fn vertex_count(&self) -> u32 {
         self.vertex_count
+    }
+
+    pub fn fps(&self) -> f32 {
+        self.fps
     }
 
     pub fn effective_forces(&self) -> &EffectiveForces {

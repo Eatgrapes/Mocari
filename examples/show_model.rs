@@ -771,7 +771,9 @@ impl WindowState {
     }
 
     fn needs_continuous_redraw(&self) -> bool {
-        self.model.player.is_some() || self.model.expression_manager.active_expression_count() > 0
+        self.model.player.is_some()
+            || self.model.expression_manager.active_expression_count() > 0
+            || self.model.runtime.physics().is_some()
     }
 
     fn reset_fps_label(&mut self) -> Result<(), Box<dyn Error>> {
@@ -1172,8 +1174,9 @@ fn advance_model_frame(
     model: &mut LoadedModel,
     delta: f32,
 ) -> Result<(), Box<dyn Error>> {
-    let animating =
-        model.player.is_some() || model.expression_manager.active_expression_count() > 0;
+    let animating = model.player.is_some()
+        || model.expression_manager.active_expression_count() > 0
+        || model.runtime.physics().is_some();
     if !model.dirty && !animating {
         return Ok(());
     }
@@ -1190,6 +1193,7 @@ fn advance_model_frame(
     model.expression_manager.tick(delta);
     model.expression_manager.apply(&mut model.runtime);
     model.runtime.apply_parameter_overrides();
+    model.runtime.apply_physics(delta);
     model.runtime.apply_pose(delta);
     if model.runtime.update_meshes().is_none() {
         return Err(Box::new(ExampleError("failed to rebuild model meshes")));

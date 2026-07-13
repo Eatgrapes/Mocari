@@ -557,6 +557,28 @@ fn default_pose_hides_redundant_arm_via_pose_groups() {
     assert!(visible > 0, "the selected arm and body must stay visible");
 }
 
+#[test]
+fn loaded_physics_updates_parameters_and_can_be_reset() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let initial_output = runtime.parameter_value("ParamHairFront").unwrap();
+
+    assert!(runtime.physics().is_some());
+    assert!(runtime.set_parameter("ParamAngleX", 30.0));
+    for _ in 0..3 {
+        assert!(runtime.apply_physics(1.0 / 30.0));
+    }
+
+    let output = runtime.parameter_value("ParamHairFront").unwrap();
+    assert!(output.is_finite());
+    assert_ne!(output, initial_output);
+    assert!(runtime.reset_physics());
+    assert!(runtime.stabilize_physics());
+    runtime.clear_physics();
+    assert!(runtime.physics().is_none());
+    assert!(!runtime.apply_physics(1.0 / 30.0));
+}
+
 fn assert_color_close(actual: [f32; 3], expected: [f32; 3]) {
     for (actual, expected) in actual.into_iter().zip(expected) {
         assert!((actual - expected).abs() < 0.0001);

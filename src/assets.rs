@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    json::{Model3, Pose3},
+    json::{Model3, Physics3, Pose3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
         Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
@@ -200,6 +200,7 @@ struct ParsedModel {
     glues: Moc3Glues,
     parts: Moc3Parts,
     draw_order_groups: Option<Moc3DrawOrderGroups>,
+    physics: Option<Physics3>,
     pose: Option<Pose3>,
     textures: Vec<DecodedTexture>,
 }
@@ -235,7 +236,7 @@ impl ParsedModel {
         self,
         model_dir: Option<PathBuf>,
     ) -> Result<RuntimeModel, AssetLoadError> {
-        let runtime = ModelRuntime::new(
+        let mut runtime = ModelRuntime::new(
             self.model,
             self.canvas,
             self.art_meshes,
@@ -250,6 +251,9 @@ impl ParsedModel {
             self.pose,
         )
         .ok_or(AssetLoadError::DrawableMeshes)?;
+        if let Some(physics) = self.physics {
+            runtime.set_physics(physics);
+        }
 
         Ok(RuntimeModel {
             runtime,
@@ -279,6 +283,13 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
     let parts = Moc3Parts::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let draw_order_groups = Moc3DrawOrderGroups::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let physics = match model.physics() {
+        Some(physics_file) => {
+            let physics_source = read_text(&model_dir.join(physics_file))?;
+            Some(Physics3::from_json_str(&physics_source).map_err(AssetLoadError::Json)?)
+        }
+        None => None,
+    };
     let pose = match model.pose() {
         Some(pose_file) => {
             let pose_source = read_text(&model_dir.join(pose_file))?;
@@ -300,6 +311,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         glues,
         parts,
         draw_order_groups,
+        physics,
         pose,
         textures,
     })
