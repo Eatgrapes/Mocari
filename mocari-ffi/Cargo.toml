@@ -1,0 +1,12 @@
+[package]
+name = "mocari-ffi"
+version = "0.1.0"
+edition = "2024"
+description = "C ABI adapter for the Mocari Live2D runtime"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mocari = { path = ".." }
