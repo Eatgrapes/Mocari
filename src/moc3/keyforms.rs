@@ -297,6 +297,23 @@ impl Moc3ArtMeshKeyforms {
         let keyform = self
             .art_mesh_keyforms(mesh_index)?
             .get(local_keyform_index)?;
+        self.art_mesh_positions_for_keyform(mesh_index, keyform)
+    }
+
+    pub(super) fn blend_shape_positions(
+        &self,
+        mesh_index: usize,
+        keyform_index: usize,
+    ) -> Option<&[f32]> {
+        let keyform = self.keyforms.get(keyform_index)?;
+        self.art_mesh_positions_for_keyform(mesh_index, keyform)
+    }
+
+    fn art_mesh_positions_for_keyform(
+        &self,
+        mesh_index: usize,
+        keyform: &Moc3ArtMeshKeyformInfo,
+    ) -> Option<&[f32]> {
         let vertex_count = *self.vertex_counts.get(mesh_index)?;
         let start = usize::try_from(keyform.position_begin_index).ok()?;
         let len = usize::try_from(vertex_count).ok()?.checked_mul(2)?;

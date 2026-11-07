@@ -201,6 +201,14 @@ fn build_moc3_drawable_mesh_for_pose(
     let multiply_color = combine_multiply_color(multiply_color, parent_multiply_color);
     let screen_color = combine_screen_color(screen_color, parent_screen_color);
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
+    bindings.blend_shapes().for_each_art_mesh_keyform(
+        art_mesh_index,
+        parameter_values,
+        |target, weight| {
+            let source = art_mesh_keyforms.blend_shape_positions(art_mesh_index, target)?;
+            apply_position_deltas(&mut positions, source, weight)
+        },
+    )?;
 
     composed.transform_vertices(parent_deformer_index, &mut positions)?;
 
@@ -267,6 +275,15 @@ fn update_moc3_drawable_mesh_for_pose(
         &slots,
         &mut scratch.positions,
     )?;
+    bindings.blend_shapes().for_each_art_mesh_keyform(
+        art_mesh_index,
+        parameter_values,
+        |target, weight| {
+            let source =
+                art_mesh_keyforms.blend_shape_positions(target, scratch.positions.len())?;
+            apply_position_deltas(&mut scratch.positions, source, weight)
+        },
+    )?;
     composed.transform_vertices(parent_deformer_index, &mut scratch.positions)?;
 
     if mesh.vertices().len() != scratch.positions.len() {
@@ -282,6 +299,19 @@ fn update_moc3_drawable_mesh_for_pose(
     mesh.set_render_order(art_meshes.art_mesh_render_order(art_mesh_index)?);
     mesh.set_multiply_color(multiply_color);
     mesh.set_screen_color(screen_color);
+    Some(())
+}
+
+fn apply_position_deltas(positions: &mut [Vector2], deltas: &[f32], weight: f32) -> Option<()> {
+    if deltas.len() != positions.len().checked_mul(2)? {
+        return None;
+    }
+    for (position, delta) in positions.iter_mut().zip(deltas.as_chunks::<2>().0) {
+        *position = Vector2::new(
+            position.x() + delta[0] * weight,
+            position.y() + delta[1] * weight,
+        );
+    }
     Some(())
 }
 

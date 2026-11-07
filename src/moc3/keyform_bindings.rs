@@ -5,6 +5,7 @@ use crate::{
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
+    blend_shapes::Moc3BlendShapes,
     parse::{invalid_moc3, read_f32_section, read_i32_section, to_usize},
 };
 
@@ -31,6 +32,7 @@ pub struct Moc3KeyformBindings {
     keys_begin_indices: Vec<i32>,
     keys_counts: Vec<i32>,
     key_values: Vec<f32>,
+    blend_shapes: Moc3BlendShapes,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -130,6 +132,7 @@ impl Moc3KeyformBindings {
                 to_usize(counts.keys(), "key count")?,
                 endianness,
             )?,
+            blend_shapes: Moc3BlendShapes::parse(bytes)?,
         })
     }
 
@@ -143,6 +146,10 @@ impl Moc3KeyformBindings {
 
     pub fn parameter_max_values(&self) -> &[f32] {
         &self.parameter_max_values
+    }
+
+    pub(super) fn blend_shapes(&self) -> &Moc3BlendShapes {
+        &self.blend_shapes
     }
 
     pub fn default_keyform_index(&self, band_index: i32, keyform_count: usize) -> Option<usize> {
