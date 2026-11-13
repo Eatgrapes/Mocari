@@ -5,6 +5,7 @@ use crate::{
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
+    blend_shapes::{BlendShapeScratch, EvaluatedBlendShapes, Moc3BlendShapes},
     parse::{invalid_moc3, read_f32_section, read_i32_section, to_usize},
 };
 
@@ -31,6 +32,7 @@ pub struct Moc3KeyformBindings {
     keys_begin_indices: Vec<i32>,
     keys_counts: Vec<i32>,
     key_values: Vec<f32>,
+    blend_shapes: Moc3BlendShapes,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -61,6 +63,15 @@ impl Moc3KeyformBindings {
             parameter_binding_count,
         )
         .ok_or_else(|| invalid_moc3("invalid parameter binding begin indices"))?;
+
+        let key_values = read_f32_section(
+            bytes,
+            &offsets,
+            KEY_VALUES_SLOT,
+            to_usize(counts.keys(), "key count")?,
+            endianness,
+        )?;
+        let blend_shapes = Moc3BlendShapes::parse(bytes, header, &offsets, &counts, &key_values)?;
 
         Ok(Self {
             binding_parameter_indices,
@@ -123,13 +134,8 @@ impl Moc3KeyformBindings {
                 to_usize(counts.parameter_bindings(), "keyform binding count")?,
                 endianness,
             )?,
-            key_values: read_f32_section(
-                bytes,
-                &offsets,
-                KEY_VALUES_SLOT,
-                to_usize(counts.keys(), "key count")?,
-                endianness,
-            )?,
+            key_values,
+            blend_shapes,
         })
     }
 
@@ -143,6 +149,15 @@ impl Moc3KeyformBindings {
 
     pub fn parameter_max_values(&self) -> &[f32] {
         &self.parameter_max_values
+    }
+
+    pub(super) fn evaluate_blend_shapes<'a>(
+        &'a self,
+        parameter_values: &[f32],
+        scratch: &'a mut BlendShapeScratch,
+    ) -> Option<EvaluatedBlendShapes<'a>> {
+        self.blend_shapes
+            .evaluate(&self.key_values, parameter_values, scratch)
     }
 
     pub fn default_keyform_index(&self, band_index: i32, keyform_count: usize) -> Option<usize> {

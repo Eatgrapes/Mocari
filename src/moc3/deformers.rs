@@ -2,6 +2,7 @@ use crate::{Result, core::Vector2};
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
+    blend_shapes::{EvaluatedBlendShapes, add_weighted_positions},
     compose::{
         ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp, apply_composed_parent,
         parent_colors, parent_opacity_accum, parent_rotation_angle, parent_scale_accum,
@@ -322,6 +323,7 @@ impl Moc3Deformers {
         &self,
         bindings: &Moc3KeyformBindings,
         parameter_values: &[f32],
+        blend_shapes: &EvaluatedBlendShapes<'_>,
     ) -> Option<ComposedDeformers> {
         let count = self.deformer_kinds.len();
         let mut order: Vec<usize> = (0..count).collect();
@@ -335,6 +337,10 @@ impl Moc3Deformers {
                 Moc3DeformerKind::Warp => {
                     let mut grid =
                         self.interpolated_warp_grid(specific, bindings, parameter_values)?;
+                    blend_shapes.for_each_warp_keyform(specific, |target, weight| {
+                        let source = self.warp_positions(specific, target)?;
+                        add_weighted_positions(&mut grid, source, weight)
+                    })?;
                     let cols = usize::try_from(*self.warp_cols.get(specific)?).ok()?;
                     let rows = usize::try_from(*self.warp_rows.get(specific)?).ok()?;
                     for point in &mut grid {
@@ -359,8 +365,12 @@ impl Moc3Deformers {
                     })
                 }
                 Moc3DeformerKind::Rotation => {
-                    let rotation =
-                        self.interpolated_rotation(specific, bindings, parameter_values)?;
+                    let rotation = self.interpolated_rotation(
+                        specific,
+                        bindings,
+                        parameter_values,
+                        blend_shapes,
+                    )?;
                     let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
                     let parent_angle =
                         parent_rotation_angle(&composed, parent, origin, rotation.translation)?;
@@ -461,16 +471,8 @@ impl Moc3Deformers {
 
         for slot in slots {
             let keyform_index = begin.checked_add(slot.local_index)?;
-            let source = self.warp_grid(warp_index, keyform_index)?;
-            if source.len() != grid.len() {
-                return None;
-            }
-            for (target, source) in grid.iter_mut().zip(source) {
-                *target = Vector2::new(
-                    target.x() + source.x() * slot.weight,
-                    target.y() + source.y() * slot.weight,
-                );
-            }
+            let source = self.warp_positions(warp_index, keyform_index)?;
+            add_weighted_positions(&mut grid, source, slot.weight)?;
         }
 
         Some(grid)
@@ -481,6 +483,7 @@ impl Moc3Deformers {
         rotation_index: usize,
         bindings: &Moc3KeyformBindings,
         parameter_values: &[f32],
+        blend_shapes: &EvaluatedBlendShapes<'_>,
     ) -> Option<InterpolatedRotation> {
         let slots = self.rotation_keyform_slots(rotation_index, bindings, parameter_values)?;
         let begin =
@@ -506,6 +509,16 @@ impl Moc3Deformers {
             flip_y += u8::from(*self.rotation_keyform_reflect_ys.get(keyform_index)?) as f32
                 * slot.weight;
         }
+
+        blend_shapes.for_each_rotation_keyform(rotation_index, |keyform_index, weight| {
+            angle += *self.rotation_keyform_angles.get(keyform_index)? * weight;
+            translation = Vector2::new(
+                translation.x() + *self.rotation_keyform_origin_xs.get(keyform_index)? * weight,
+                translation.y() + *self.rotation_keyform_origin_ys.get(keyform_index)? * weight,
+            );
+            scale += *self.rotation_keyform_scales.get(keyform_index)? * weight;
+            Some(())
+        })?;
 
         Some(InterpolatedRotation {
             angle_degrees: *self.rotation_base_angles.get(rotation_index)? + angle,
@@ -583,25 +596,17 @@ impl Moc3Deformers {
         )
     }
 
-    fn warp_grid(&self, warp_index: usize, keyform_index: usize) -> Option<Vec<Vector2>> {
+    fn warp_positions(&self, warp_index: usize, keyform_index: usize) -> Option<&[f32]> {
+        let vertex_count = usize::try_from(*self.warp_vertex_counts.get(warp_index)?).ok()?;
         let start = usize::try_from(
             *self
                 .warp_keyform_position_begin_indices
                 .get(keyform_index)?,
         )
         .ok()?;
-        let vertex_count = usize::try_from(*self.warp_vertex_counts.get(warp_index)?).ok()?;
         let len = vertex_count.checked_mul(2)?;
-        let values = self
-            .keyform_position_xys
-            .get(start..start.checked_add(len)?)?;
-
-        Some(
-            values
-                .chunks_exact(2)
-                .map(|xy| Vector2::new(xy[0], xy[1]))
-                .collect(),
-        )
+        self.keyform_position_xys
+            .get(start..start.checked_add(len)?)
     }
 }
 

@@ -155,7 +155,7 @@ fn encode_vertex_into(
 /// Encodes `u16` mesh indices into native-endian bytes.
 pub fn encode_indices(indices: &[u16]) -> Vec<u8> {
     let mut bytes = vec![0; indices.len() * 2];
-    for (chunk, index) in bytes.chunks_exact_mut(2).zip(indices) {
+    for (chunk, index) in bytes.as_chunks_mut::<2>().0.iter_mut().zip(indices) {
         chunk.copy_from_slice(&index.to_ne_bytes());
     }
 

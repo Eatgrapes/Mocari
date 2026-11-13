@@ -224,8 +224,10 @@ pub fn build_moc3_drawable_mesh(
     }
 
     let vertices = positions
-        .chunks_exact(2)
-        .zip(uvs.chunks_exact(2))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(uvs.as_chunks::<2>().0)
         .map(|(position, uv)| Moc3DrawableVertex::new([position[0], position[1]], [uv[0], uv[1]]))
         .collect::<Vec<_>>();
 

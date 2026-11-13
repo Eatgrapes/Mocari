@@ -2,13 +2,17 @@ use crate::core::Vector2;
 
 use super::{
     Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3Deformers, Moc3DrawableMesh,
-    Moc3DrawableVertex, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, build_moc3_drawable_mesh,
-    compose::ComposedDeformers, keyform_bindings::Moc3KeyformSlot,
+    Moc3DrawableVertex, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
+    blend_shapes::{BlendShapeScratch, EvaluatedBlendShapes, add_weighted_positions},
+    build_moc3_drawable_mesh,
+    compose::ComposedDeformers,
+    keyform_bindings::Moc3KeyformSlot,
 };
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Moc3MeshUpdateScratch {
     positions: Vec<Vector2>,
+    blend_shapes: BlendShapeScratch,
 }
 
 pub fn build_moc3_drawable_meshes_for_default_pose(
@@ -33,13 +37,16 @@ pub fn build_moc3_drawable_meshes_with_parameters(
     bindings: &Moc3KeyformBindings,
     parameter_values: &[f32],
 ) -> Option<Vec<Moc3DrawableMesh>> {
-    let composed = deformers.compose(bindings, parameter_values)?;
+    let mut scratch = BlendShapeScratch::default();
+    let blend_shapes = bindings.evaluate_blend_shapes(parameter_values, &mut scratch)?;
+    let composed = deformers.compose(bindings, parameter_values, &blend_shapes)?;
     let mut meshes = Vec::with_capacity(art_meshes.meshes().len());
     for art_mesh_index in 0..art_meshes.meshes().len() {
         meshes.push(build_moc3_drawable_mesh_for_pose(
             art_meshes,
             art_mesh_keyforms,
             &composed,
+            &blend_shapes,
             bindings,
             parameter_values,
             art_mesh_index,
@@ -137,14 +144,17 @@ pub(crate) fn update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opa
         return None;
     }
 
-    let composed = deformers.compose(bindings, parameter_values)?;
+    let blend_shapes =
+        bindings.evaluate_blend_shapes(parameter_values, &mut scratch.blend_shapes)?;
+    let composed = deformers.compose(bindings, parameter_values, &blend_shapes)?;
     for (art_mesh_index, mesh) in meshes.iter_mut().enumerate() {
         update_moc3_drawable_mesh_for_pose(
             mesh,
-            scratch,
+            &mut scratch.positions,
             art_meshes,
             art_mesh_keyforms,
             &composed,
+            &blend_shapes,
             bindings,
             parameter_values,
             art_mesh_index,
@@ -163,10 +173,12 @@ pub(crate) fn update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opa
     Some(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_moc3_drawable_mesh_for_pose(
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
     composed: &ComposedDeformers,
+    blend_shapes: &EvaluatedBlendShapes<'_>,
     bindings: &Moc3KeyformBindings,
     parameter_values: &[f32],
     art_mesh_index: usize,
@@ -201,6 +213,12 @@ fn build_moc3_drawable_mesh_for_pose(
     let multiply_color = combine_multiply_color(multiply_color, parent_multiply_color);
     let screen_color = combine_screen_color(screen_color, parent_screen_color);
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
+    apply_art_mesh_blend_shapes(
+        art_mesh_keyforms,
+        blend_shapes,
+        art_mesh_index,
+        &mut positions,
+    )?;
 
     composed.transform_vertices(parent_deformer_index, &mut positions)?;
 
@@ -231,10 +249,11 @@ fn build_moc3_drawable_mesh_for_pose(
 #[allow(clippy::too_many_arguments)]
 fn update_moc3_drawable_mesh_for_pose(
     mesh: &mut Moc3DrawableMesh,
-    scratch: &mut Moc3MeshUpdateScratch,
+    positions: &mut Vec<Vector2>,
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
     composed: &ComposedDeformers,
+    blend_shapes: &EvaluatedBlendShapes<'_>,
     bindings: &Moc3KeyformBindings,
     parameter_values: &[f32],
     art_mesh_index: usize,
@@ -261,18 +280,14 @@ fn update_moc3_drawable_mesh_for_pose(
         composed.deformer_colors(parent_deformer_index);
     let multiply_color = combine_multiply_color(multiply_color, parent_multiply_color);
     let screen_color = combine_screen_color(screen_color, parent_screen_color);
-    interpolate_art_mesh_positions_into(
-        art_mesh_keyforms,
-        art_mesh_index,
-        &slots,
-        &mut scratch.positions,
-    )?;
-    composed.transform_vertices(parent_deformer_index, &mut scratch.positions)?;
+    interpolate_art_mesh_positions_into(art_mesh_keyforms, art_mesh_index, &slots, positions)?;
+    apply_art_mesh_blend_shapes(art_mesh_keyforms, blend_shapes, art_mesh_index, positions)?;
+    composed.transform_vertices(parent_deformer_index, positions)?;
 
-    if mesh.vertices().len() != scratch.positions.len() {
+    if mesh.vertices().len() != positions.len() {
         return None;
     }
-    for (vertex, position) in mesh.vertices_mut().iter_mut().zip(&scratch.positions) {
+    for (vertex, position) in mesh.vertices_mut().iter_mut().zip(positions.iter()) {
         let uv = vertex.uv();
         *vertex = Moc3DrawableVertex::new([position.x(), -position.y()], uv);
     }
@@ -283,6 +298,18 @@ fn update_moc3_drawable_mesh_for_pose(
     mesh.set_multiply_color(multiply_color);
     mesh.set_screen_color(screen_color);
     Some(())
+}
+
+fn apply_art_mesh_blend_shapes(
+    keyforms: &Moc3ArtMeshKeyforms,
+    blend_shapes: &EvaluatedBlendShapes<'_>,
+    mesh_index: usize,
+    positions: &mut [Vector2],
+) -> Option<()> {
+    blend_shapes.for_each_art_mesh_keyform(mesh_index, |keyform, weight| {
+        let deltas = keyforms.blend_shape_positions(mesh_index, keyform)?;
+        add_weighted_positions(positions, deltas, weight)
+    })
 }
 
 fn combine_multiply_color(local: [f32; 3], parent: [f32; 3]) -> [f32; 3] {
@@ -347,12 +374,7 @@ fn interpolate_art_mesh_positions_into(
         if positions.len() != first.len() || positions.len() % 2 != 0 {
             return None;
         }
-        for (target, position) in out.iter_mut().zip(positions.chunks_exact(2)) {
-            *target = Vector2::new(
-                target.x() + position[0] * slot.weight,
-                target.y() + position[1] * slot.weight,
-            );
-        }
+        add_weighted_positions(out, positions, slot.weight)?;
     }
 
     Some(())

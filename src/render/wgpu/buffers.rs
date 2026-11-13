@@ -402,7 +402,9 @@ fn renderer_vertex_data_changed(drawable: &WgpuDrawableBuffers, mesh: &Moc3Drawa
     let screen = color_bytes(mesh.screen_color());
     drawable
         .vertex_bytes
-        .chunks_exact(DrawableVertex::STRIDE)
+        .as_chunks::<{ DrawableVertex::STRIDE }>()
+        .0
+        .iter()
         .zip(mesh.vertices())
         .any(|(bytes, vertex)| {
             bytes[0..8] != vec2_bytes(vertex.position())

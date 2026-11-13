@@ -31,6 +31,16 @@ pub struct Moc3CountInfo {
     glue_keyforms: u32,
     keyform_multiply_colors: u32,
     keyform_screen_colors: u32,
+    blend_shape_parameter_bindings: u32,
+    blend_shape_keyform_bindings: u32,
+    blend_shapes_warp_deformers: u32,
+    blend_shapes_art_meshes: u32,
+    blend_shape_constraint_indices: u32,
+    blend_shape_constraints: u32,
+    blend_shape_constraint_values: u32,
+    blend_shapes_parts: u32,
+    blend_shapes_rotation_deformers: u32,
+    blend_shapes_glue: u32,
 }
 
 impl Moc3CountInfo {
@@ -74,6 +84,16 @@ impl Moc3CountInfo {
             glue_keyforms: read(22),
             keyform_multiply_colors: if word_count > 23 { read(23) } else { 0 },
             keyform_screen_colors: if word_count > 24 { read(24) } else { 0 },
+            blend_shape_parameter_bindings: if word_count > 25 { read(25) } else { 0 },
+            blend_shape_keyform_bindings: if word_count > 26 { read(26) } else { 0 },
+            blend_shapes_warp_deformers: if word_count > 27 { read(27) } else { 0 },
+            blend_shapes_art_meshes: if word_count > 28 { read(28) } else { 0 },
+            blend_shape_constraint_indices: if word_count > 29 { read(29) } else { 0 },
+            blend_shape_constraints: if word_count > 30 { read(30) } else { 0 },
+            blend_shape_constraint_values: if word_count > 31 { read(31) } else { 0 },
+            blend_shapes_parts: if word_count > 32 { read(32) } else { 0 },
+            blend_shapes_rotation_deformers: if word_count > 33 { read(33) } else { 0 },
+            blend_shapes_glue: if word_count > 34 { read(34) } else { 0 },
         })
     }
 
@@ -175,6 +195,46 @@ impl Moc3CountInfo {
 
     pub fn keyform_screen_colors(&self) -> u32 {
         self.keyform_screen_colors
+    }
+
+    pub fn blend_shape_parameter_bindings(&self) -> u32 {
+        self.blend_shape_parameter_bindings
+    }
+
+    pub fn blend_shape_keyform_bindings(&self) -> u32 {
+        self.blend_shape_keyform_bindings
+    }
+
+    pub fn blend_shapes_warp_deformers(&self) -> u32 {
+        self.blend_shapes_warp_deformers
+    }
+
+    pub fn blend_shapes_art_meshes(&self) -> u32 {
+        self.blend_shapes_art_meshes
+    }
+
+    pub fn blend_shape_constraint_indices(&self) -> u32 {
+        self.blend_shape_constraint_indices
+    }
+
+    pub fn blend_shape_constraints(&self) -> u32 {
+        self.blend_shape_constraints
+    }
+
+    pub fn blend_shape_constraint_values(&self) -> u32 {
+        self.blend_shape_constraint_values
+    }
+
+    pub fn blend_shapes_parts(&self) -> u32 {
+        self.blend_shapes_parts
+    }
+
+    pub fn blend_shapes_rotation_deformers(&self) -> u32 {
+        self.blend_shapes_rotation_deformers
+    }
+
+    pub fn blend_shapes_glue(&self) -> u32 {
+        self.blend_shapes_glue
     }
 }
 

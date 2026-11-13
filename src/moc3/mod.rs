@@ -7,6 +7,7 @@
 //! use these building blocks directly.
 
 mod art_meshes;
+mod blend_shapes;
 mod canvas;
 mod compose;
 mod counts;
