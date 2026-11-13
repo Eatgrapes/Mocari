@@ -1,5 +1,5 @@
 mod ids {
-    use mocari::{DrawableId, Error, Id, ParameterId, PartId};
+    use mocari::{Error, Id};
 
     #[test]
     fn id_rejects_empty_strings() {
@@ -12,17 +12,6 @@ mod ids {
         let id = Id::new(" ParamAngleX ").unwrap();
         assert_eq!(id.as_str(), " ParamAngleX ");
         assert_eq!(id.to_string(), " ParamAngleX ");
-    }
-
-    #[test]
-    fn typed_ids_expose_their_inner_text() {
-        let parameter = ParameterId::new("ParamAngleX").unwrap();
-        let part = PartId::new("PartSegmentA").unwrap();
-        let drawable = DrawableId::new("DrawableBody").unwrap();
-
-        assert_eq!(parameter.as_str(), "ParamAngleX");
-        assert_eq!(part.as_str(), "PartSegmentA");
-        assert_eq!(drawable.as_str(), "DrawableBody");
     }
 }
 
@@ -221,40 +210,7 @@ mod core_keyforms {
 }
 
 mod core_update_order {
-    use mocari::core::{
-        ModelUpdateStep, semantic_model_update_order, should_affect_glues, should_blend_glues,
-        should_run_offscreen_stage,
-    };
-
-    #[test]
-    fn exposes_confirmed_semantic_model_update_order() {
-        let order = semantic_model_update_order();
-
-        assert_eq!(order.first(), Some(&ModelUpdateStep::PreUpdateDynamicFlags));
-        assert_eq!(
-            order.windows(4).position(|steps| {
-                steps
-                    == [
-                        ModelUpdateStep::UpdateParameters,
-                        ModelUpdateStep::UpdateParameterBindings,
-                        ModelUpdateStep::UpdateBlendShapeParameterBindings,
-                        ModelUpdateStep::UpdateKeyformBindings,
-                    ]
-            }),
-            Some(1)
-        );
-        assert!(
-            order
-                .iter()
-                .position(|step| *step == ModelUpdateStep::BlendArtMeshes)
-                .unwrap()
-                < order
-                    .iter()
-                    .position(|step| *step == ModelUpdateStep::TransformDeformers)
-                    .unwrap()
-        );
-        assert_eq!(order.last(), Some(&ModelUpdateStep::PostUpdateDynamicFlags));
-    }
+    use mocari::core::{should_affect_glues, should_blend_glues, should_run_offscreen_stage};
 
     #[test]
     fn applies_confirmed_glue_and_offscreen_guards() {

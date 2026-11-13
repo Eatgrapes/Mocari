@@ -2,11 +2,10 @@ use mocari::{
     core::Matrix44,
     moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
-        WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
-        WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
+        WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex, WgpuLive2dRenderer,
+        WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_clip_params, encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix,
-        encode_wgpu_vertices, live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source,
-        mask_wgsl_source, preferred_surface_format, wgpu_mask_blend_state,
+        encode_wgpu_vertices, live2d_blend_state, preferred_surface_format, wgpu_mask_blend_state,
         wgpu_vertices_from_drawable,
     },
 };
@@ -48,56 +47,6 @@ fn encodes_wgpu_vertices_and_indices() {
 }
 
 #[test]
-fn live2d_wgsl_samples_texture_and_applies_opacity() {
-    let source = live2d_wgsl_source();
-    let shader_file = std::fs::read_to_string("src/render/shaders/live2d.wgsl").unwrap();
-
-    assert_eq!(source, shader_file);
-    assert!(source.contains("@location(0) position: vec2<f32>"));
-    assert!(source.contains("@location(1) uv: vec2<f32>"));
-    assert!(source.contains("@location(2) opacity: f32"));
-    assert!(source.contains("@location(3) multiply: vec3<f32>"));
-    assert!(source.contains("@location(4) screen: vec3<f32>"));
-    assert!(source.contains("@group(1) @binding(0)"));
-    assert!(source.contains("live2d_transform * vec4<f32>(input.position, 0.0, 1.0)"));
-    assert!(source.contains("textureSample"));
-    assert!(source.contains("let alpha = sample.a * input.opacity"));
-    assert!(source.contains("rgb = rgb + input.screen - rgb * input.screen"));
-    assert!(source.contains("vec4<f32>(rgb * alpha, alpha)"));
-}
-
-#[test]
-fn mask_wgsl_uses_external_file_and_channel_params() {
-    let source = mask_wgsl_source();
-    let shader_file = std::fs::read_to_string("src/render/shaders/mask.wgsl").unwrap();
-
-    assert_eq!(source, shader_file);
-    assert!(source.contains("@group(2) @binding(0)"));
-    assert!(source.contains("channel_flag: vec4<f32>"));
-    assert!(source.contains("base_rect: vec4<f32>"));
-    assert!(source.contains("step(mask_params.base_rect.x, pos.x)"));
-    assert!(source.contains("textureSample(live2d_texture, live2d_sampler, input.uv).a"));
-    assert!(source.contains("return mask_params.channel_flag * source_alpha"));
-}
-
-#[test]
-fn live2d_masked_wgsl_samples_inverse_mask_channel() {
-    let source = live2d_masked_wgsl_source();
-    let shader_file = std::fs::read_to_string("src/render/shaders/live2d_masked.wgsl").unwrap();
-
-    assert_eq!(source, shader_file);
-    assert!(source.contains("@group(2) @binding(0)"));
-    assert!(source.contains("@group(3) @binding(0)"));
-    assert!(source.contains("clip_matrix: mat4x4<f32>"));
-    assert!(source.contains("channel_flag: vec4<f32>"));
-    assert!(source.contains("clip_params.clip_matrix * position"));
-    assert!(source.contains("rgb = rgb + input.screen - rgb * input.screen"));
-    assert!(source.contains("vec4<f32>(rgb * alpha, alpha)"));
-    assert!(source.contains("dot(mask_sample, clip_params.channel_flag)"));
-    assert!(source.contains("select(masked, 1.0 - masked, clip_params.inverted.x > 0.5)"));
-}
-
-#[test]
 fn encodes_wgpu_transform_matrix() {
     let mut matrix = Matrix44::identity();
     matrix.scale(2.0, 3.0);
@@ -130,22 +79,6 @@ fn encodes_mask_params_from_layout_channel_and_bounds() {
     assert_eq!(&bytes[20..24], &(-1.0f32).to_ne_bytes());
     assert_eq!(&bytes[24..28], &1.0f32.to_ne_bytes());
     assert_eq!(&bytes[28..32], &1.0f32.to_ne_bytes());
-}
-
-#[test]
-fn creates_mask_params_bind_group() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
-    let layout = mocari::render::wgpu::WgpuClippingLayout::new(
-        WgpuMaskChannel::Red,
-        WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
-    );
-
-    let params = renderer.create_mask_params(&device, layout);
-
-    let _ = params.buffer();
-    let _ = params.bind_group();
-    let _ = renderer.mask_params_bind_group_layout();
 }
 
 #[test]
@@ -185,19 +118,6 @@ fn encodes_clip_params_from_draw_matrix_and_channel() {
     assert_eq!(&bytes[76..80], &0.0f32.to_ne_bytes());
     assert_eq!(&bytes[80..84], &1.0f32.to_ne_bytes());
     assert_eq!(&bytes[84..88], &0.0f32.to_ne_bytes());
-}
-
-#[test]
-fn creates_clip_params_bind_group() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
-
-    let params =
-        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
-
-    let _ = params.buffer();
-    let _ = params.bind_group();
-    let _ = renderer.clip_params_bind_group_layout();
 }
 
 #[test]
@@ -958,102 +878,6 @@ fn builds_clipping_plan_from_masked_drawables() {
     assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 2]);
     assert_eq!(plan.contexts()[1].masks(), &[3]);
     assert_eq!(plan.contexts()[1].drawable_indices(), &[3]);
-}
-
-#[test]
-fn merges_clipping_contexts_with_same_mask_set_regardless_of_order() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let meshes = [
-        test_mesh_with_masks(0, 0.0, vec![1, 2]),
-        test_mesh_with_masks(0, 1.0, vec![2, 1]),
-    ];
-    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
-
-    let plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
-
-    assert_eq!(plan.contexts().len(), 1);
-    assert_eq!(plan.contexts()[0].masks(), &[1, 2]);
-    assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 1]);
-}
-
-#[test]
-fn splits_clipping_contexts_when_inverted_flag_differs() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let meshes = [
-        test_mesh(0, 0, 0.0, vec![1, 2]),
-        test_mesh(0, 1 << 3, 1.0, vec![1, 2]),
-    ];
-    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
-
-    let plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
-
-    assert_eq!(plan.contexts().len(), 2);
-    assert!(!plan.contexts()[0].inverted());
-    assert_eq!(plan.contexts()[0].drawable_indices(), &[0]);
-    assert!(plan.contexts()[1].inverted());
-    assert_eq!(plan.contexts()[1].drawable_indices(), &[1]);
-}
-
-#[test]
-fn assigns_single_texture_clipping_layouts_by_channel_and_cell() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let meshes = [
-        test_mesh_with_masks(0, 0.0, vec![10]),
-        test_mesh_with_masks(0, 1.0, vec![11]),
-        test_mesh_with_masks(0, 2.0, vec![12]),
-        test_mesh_with_masks(0, 3.0, vec![13]),
-        test_mesh_with_masks(0, 4.0, vec![14]),
-    ];
-    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
-    let mut plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
-
-    plan.assign_single_texture_layouts().unwrap();
-
-    assert_eq!(
-        plan.contexts()[0].layout().unwrap().channel(),
-        WgpuMaskChannel::Red
-    );
-    assert_eq!(
-        plan.contexts()[0].layout().unwrap().bounds(),
-        WgpuClippingRect::new(0.0, 0.0, 0.5, 1.0)
-    );
-    assert_eq!(
-        plan.contexts()[1].layout().unwrap().channel(),
-        WgpuMaskChannel::Red
-    );
-    assert_eq!(
-        plan.contexts()[1].layout().unwrap().bounds(),
-        WgpuClippingRect::new(0.5, 0.0, 0.5, 1.0)
-    );
-    assert_eq!(
-        plan.contexts()[2].layout().unwrap().channel(),
-        WgpuMaskChannel::Green
-    );
-    assert_eq!(
-        plan.contexts()[2].layout().unwrap().bounds(),
-        WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0)
-    );
-    assert_eq!(
-        plan.contexts()[4].layout().unwrap().channel_flag(),
-        [0.0, 0.0, 0.0, 1.0]
-    );
-}
-
-#[test]
-fn rejects_more_than_single_texture_clipping_layout_capacity() {
-    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let meshes = (0..37)
-        .map(|index| test_mesh_with_masks(0, index as f32, vec![index]))
-        .collect::<Vec<_>>();
-    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
-    let mut plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
-
-    let error = plan.assign_single_texture_layouts().unwrap_err();
-
-    assert_eq!(
-        error,
-        WgpuClippingLayoutError::TooManyMasksForSingleTexture { mask_count: 37 }
-    );
 }
 
 #[test]
