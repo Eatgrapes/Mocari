@@ -189,14 +189,22 @@ fn build_moc3_drawable_mesh_for_pose(
         keyform_count,
         parameter_values,
     )?;
-    let base_local_keyform_index = slots.first()?.local_index;
-    let mesh = build_moc3_drawable_mesh(
+    let base_local_keyform_index = slots.first().map_or(0, |slot| slot.local_index);
+    let mut mesh = build_moc3_drawable_mesh(
         art_meshes,
         art_mesh_keyforms,
         art_mesh_index,
         base_local_keyform_index,
     )?;
     let parent_deformer_index = art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?;
+    if slots.is_empty() || !composed.is_active(parent_deformer_index) {
+        mesh.set_opacity(0.0);
+        mesh.set_draw_order(0.0);
+        for vertex in mesh.vertices_mut() {
+            *vertex = Moc3DrawableVertex::new([0.0, 0.0], vertex.uv());
+        }
+        return Some(mesh);
+    }
     let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?
         * composed.deformer_opacity(parent_deformer_index);
     let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;
@@ -265,6 +273,10 @@ fn update_moc3_drawable_mesh_for_pose(
         parameter_values,
     )?;
     let parent_deformer_index = art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?;
+    if slots.is_empty() || !composed.is_active(parent_deformer_index) {
+        mesh.set_opacity(0.0);
+        return Some(());
+    }
     let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?
         * composed.deformer_opacity(parent_deformer_index);
     let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;

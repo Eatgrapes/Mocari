@@ -78,6 +78,7 @@ fn wrap_angle(mut angle: f32) -> f32 {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum ComposedDeformer {
+    Inactive,
     Warp(ComposedWarp),
     Rotation(ComposedRotation),
 }
@@ -85,6 +86,7 @@ pub(super) enum ComposedDeformer {
 impl ComposedDeformer {
     fn scale_accum(&self) -> f32 {
         match self {
+            Self::Inactive => 1.0,
             Self::Warp(warp) => warp.scale_accum,
             Self::Rotation(rotation) => rotation.scale_accum,
         }
@@ -92,6 +94,7 @@ impl ComposedDeformer {
 
     fn opacity_accum(&self) -> f32 {
         match self {
+            Self::Inactive => 0.0,
             Self::Warp(warp) => warp.opacity_accum,
             Self::Rotation(rotation) => rotation.opacity_accum,
         }
@@ -99,6 +102,7 @@ impl ComposedDeformer {
 
     fn colors(&self) -> ([f32; 3], [f32; 3]) {
         match self {
+            Self::Inactive => (DEFAULT_MULTIPLY_COLOR, DEFAULT_SCREEN_COLOR),
             Self::Warp(warp) => (warp.multiply_color, warp.screen_color),
             Self::Rotation(rotation) => (rotation.multiply_color, rotation.screen_color),
         }
@@ -137,6 +141,14 @@ pub struct ComposedDeformers {
 impl ComposedDeformers {
     pub(super) fn new(deformers: Vec<ComposedDeformer>) -> Self {
         Self { deformers }
+    }
+
+    pub(super) fn is_active(&self, index: i32) -> bool {
+        index < 0
+            || self
+                .deformers
+                .get(index as usize)
+                .is_some_and(|deformer| !matches!(deformer, ComposedDeformer::Inactive))
     }
 
     pub(super) fn transform_vertices(
@@ -185,6 +197,7 @@ impl ComposedDeformers {
 
 pub(super) fn apply_one(deformer: &ComposedDeformer, point: Vector2) -> Option<Vector2> {
     match deformer {
+        ComposedDeformer::Inactive => None,
         ComposedDeformer::Warp(warp) => warp_deformer_transform_target(
             point,
             &warp.grid,

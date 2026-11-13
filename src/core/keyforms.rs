@@ -81,6 +81,47 @@ pub fn compute_keyform_axis_interval(keys: &[f32], value: f32) -> Option<Keyform
     })
 }
 
+pub(crate) fn compute_active_keyform_axis_interval(
+    keys: &[f32],
+    value: f32,
+) -> Option<KeyformAxisInterval> {
+    const KEY_TOLERANCE: f32 = 0.001;
+    const MIN_KEY_SPACING: f32 = 0.0015;
+
+    let first = *keys.first()?;
+    if value < first - KEY_TOLERANCE
+        || (keys.len() == 1 && value == first - KEY_TOLERANCE)
+        || value >= keys.last()? + KEY_TOLERANCE
+    {
+        return None;
+    }
+    if value < first + KEY_TOLERANCE {
+        return Some(KeyformAxisInterval {
+            left_index: 0,
+            t: 0.0,
+        });
+    }
+    for (index, pair) in keys.windows(2).enumerate() {
+        let [left, right] = [pair[0], pair[1]];
+        if value < right + KEY_TOLERANCE {
+            return Some(
+                if value > right - KEY_TOLERANCE || right - left < MIN_KEY_SPACING {
+                    KeyformAxisInterval {
+                        left_index: index + 1,
+                        t: 0.0,
+                    }
+                } else {
+                    KeyformAxisInterval {
+                        left_index: index,
+                        t: (value - left) / (right - left),
+                    }
+                },
+            );
+        }
+    }
+    None
+}
+
 pub fn expand_keyform_runtime_slots(axes: &[KeyformAxis]) -> Vec<KeyformRuntimeSlot> {
     let active_count = axes.iter().filter(|axis| axis.t != 0.0).count();
     let slot_count = 1usize << active_count;

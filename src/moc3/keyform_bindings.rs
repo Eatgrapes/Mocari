@@ -1,6 +1,6 @@
 use crate::{
     Result,
-    core::{KeyformAxis, compute_keyform_axis_interval, expand_keyform_runtime_slots},
+    core::{KeyformAxis, compute_active_keyform_axis_interval, expand_keyform_runtime_slots},
 };
 
 use super::{
@@ -177,13 +177,6 @@ impl Moc3KeyformBindings {
             return None;
         }
 
-        if keyform_count == 1 {
-            return Some(vec![Moc3KeyformSlot {
-                local_index: 0,
-                weight: 1.0,
-            }]);
-        }
-
         if band_index < 0 {
             return Some(vec![Moc3KeyformSlot {
                 local_index: 0,
@@ -191,7 +184,11 @@ impl Moc3KeyformBindings {
             }]);
         }
 
-        let bindings = self.band_keyform_bindings(band_index)?;
+        let bindings = match self.band_keyform_bindings(band_index) {
+            Some(bindings) => bindings,
+            None if keyform_count == 1 => &[],
+            None => return None,
+        };
         if bindings.is_empty() {
             return Some(vec![Moc3KeyformSlot {
                 local_index: 0,
@@ -209,7 +206,9 @@ impl Moc3KeyformBindings {
                 .get(parameter_index)
                 .copied()
                 .unwrap_or(0.0);
-            let interval = compute_keyform_axis_interval(keys, parameter_value)?;
+            let Some(interval) = compute_active_keyform_axis_interval(keys, parameter_value) else {
+                return Some(Vec::new());
+            };
             let active_index = interval.left_index() + usize::from(interval.t() != 0.0);
             if active_index >= keys.len() {
                 return None;
